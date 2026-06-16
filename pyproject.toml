@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "coop-dax-review"
+version = "0.1.0"
+description = "Offline, advisory DAX/model standards linter for Power BI semantic models: parses TMDL/.bim, checks measures and model structure against the team's DAX standards, and reports anything that doesn't match. Human report + machine JSON for the company agent. Never edits or blocks."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Aaron Jennings" }]
+keywords = ["dax", "linter", "powerbi", "tmdl", "semantic-model", "standards", "fabric"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+coop-dax-review = "coop_dax_review.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/kabukisensei/coop-dax-review"
+Repository = "https://github.com/kabukisensei/coop-dax-review"
+Issues = "https://github.com/kabukisensei/coop-dax-review/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/coop_dax_review"]
+
+[tool.hatch.build]
+# Ship the bundled standards so `coop-dax-review` works with no --standards flag.
+include = ["src/coop_dax_review/**/*.py", "src/coop_dax_review/data/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

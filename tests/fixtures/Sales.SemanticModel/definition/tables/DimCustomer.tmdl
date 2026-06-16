@@ -1,0 +1,5 @@
+table DimCustomer
+	column CustomerId
+		dataType: int64
+	column MarketSegment
+		dataType: string

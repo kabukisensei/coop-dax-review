@@ -1,0 +1,28 @@
+table FactSales
+	column Revenue
+		dataType: double
+	column ProductId
+		dataType: int64
+
+	measure 'Sales: Total Revenue' = SUM(FactSales[Revenue])
+
+	measure BadName = SUM(FactSales[Revenue])
+
+	measure 'Sales: Revenue YTD' =
+		CALCULATE(
+			CALCULATE(
+				SUM(FactSales[Revenue]),
+				DATESYTD(DimDate[Date])
+			),
+			SAMEPERIODLASTYEAR(DimDate[Date])
+		)
+
+	measure 'Sales: Enterprise' =
+		CALCULATE(
+			FactSales[Sales: Total Revenue],
+			[MarketSegment] = "Enterprise"
+		)
+
+	partition FactSales = m
+		mode: import
+		source = "let Source = ... in Source"

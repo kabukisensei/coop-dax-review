@@ -1,0 +1,7 @@
+model Sales
+	defaultPowerBIDataSourceVersion: powerBI_V3
+
+relationship abc-123
+	fromColumn: FactSales.ProductId
+	toColumn: DimCustomer.CustomerId
+	crossFilteringBehavior: bothDirections
