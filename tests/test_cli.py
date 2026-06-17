@@ -90,7 +90,8 @@ def test_html_format_writes_file_opens_nothing_under_test(tmp_path):
     assert "</html>" in body
     assert "DAX-" in body  # at least one rule fired in the fixtures
     assert "HTML report written to" in result.output
-    assert str(report.resolve()) in result.output  # the path is shown for the user
+    # the path is shown for the user, as a POSIX path (OS-stable; backslashes on Windows otherwise)
+    assert report.resolve().as_posix() in result.output
 
 
 def test_html_defaults_to_a_file_in_cwd():

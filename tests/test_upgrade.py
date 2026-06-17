@@ -71,15 +71,17 @@ def test_upgrade_command_pip_editable_keeps_the_dash_e_token():
 
 
 def test_upgrade_command_git_checkout_with_new_commits_pulls_then_reinstalls():
-    plan = UpgradePlan("git-checkout", Path("/repo"), "0.1.0", "2 new commit(s) available")
+    repo = Path("/repo")  # str(repo) renders per-OS (\repo on Windows) — match that, not a literal
+    plan = UpgradePlan("git-checkout", repo, "0.1.0", "2 new commit(s) available")
     assert upgrade_command(plan) == [
-        ["git", "-C", "/repo", "pull", "--ff-only"],
-        ["python", "-m", "pip", "install", "-U", "/repo"],
+        ["git", "-C", str(repo), "pull", "--ff-only"],
+        ["python", "-m", "pip", "install", "-U", str(repo)],
     ]
 
 
 def test_upgrade_command_git_checkout_up_to_date_reinstalls_only():
     # No upstream / already current -> never emit `git pull` (it would error / no-op);
     # still reinstall so a non-editable clone is actually refreshed.
-    plan = UpgradePlan("git-checkout", Path("/repo"), "0.1.0", "checkout is up to date with its upstream")
-    assert upgrade_command(plan) == [["python", "-m", "pip", "install", "-U", "/repo"]]
+    repo = Path("/repo")
+    plan = UpgradePlan("git-checkout", repo, "0.1.0", "checkout is up to date with its upstream")
+    assert upgrade_command(plan) == [["python", "-m", "pip", "install", "-U", str(repo)]]
