@@ -279,6 +279,39 @@ def build_plan(
     return plan
 
 
+def upgrade_command(plan: UpgradePlan) -> list[list[str]]:
+    """The command(s) a user should run themselves to upgrade the tool.
+
+    `upgrade`/`update` print these rather than executing them: a running program
+    can't reliably replace its own files (on Windows its console-script .exe is
+    locked), so the user runs them in a fresh terminal. Mirrors what
+    ``apply_plan`` would run, but with display-friendly tokens (``python`` rather
+    than this interpreter's absolute path). Most install methods need a single
+    command; a git checkout may need two (pull, then reinstall).
+    """
+    if plan.install_method == "pipx":
+        verb = "reinstall" if plan.is_vcs_install else "upgrade"
+        return [["pipx", verb, PACKAGE_NAME]]
+    if plan.install_method == "uv-tool":
+        if plan.is_vcs_install:
+            return [["uv", "tool", "install", "--force", plan.pip_spec or PACKAGE_NAME]]
+        return [["uv", "tool", "upgrade", PACKAGE_NAME]]
+    if plan.install_method == "git-checkout" and plan.checkout is not None:
+        commands: list[list[str]] = []
+        # Only pull when there's something to pull: a checkout with no upstream
+        # (or already up to date) would make `git pull --ff-only` error / no-op.
+        if "new commit(s)" in plan.tool_note:
+            commands.append(["git", "-C", str(plan.checkout), "pull", "--ff-only"])
+        # Always reinstall from the checkout: for a NON-editable clone `git pull`
+        # updates the source tree but not the installed package.
+        commands.append(["python", "-m", "pip", "install", "-U", str(plan.checkout)])
+        return commands
+    if plan.pip_spec:
+        spec_tokens = ["-e", plan.pip_spec[3:]] if plan.pip_spec.startswith("-e ") else [plan.pip_spec]
+        return [["python", "-m", "pip", "install", "-U", "--force-reinstall", *spec_tokens]]
+    return [["python", "-m", "pip", "install", "-U", PACKAGE_NAME]]
+
+
 def apply_plan(plan: UpgradePlan, runner=subprocess.run) -> list[list[str]]:
     """Run the upgrade: the tool first, then non-breaking dependency bumps.
 

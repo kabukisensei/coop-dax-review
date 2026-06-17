@@ -59,3 +59,193 @@ def test_rules_command_lists_every_rule():
     ids = {r["id"] for r in json.loads(result.output)}
     assert "DAX-NO-NESTED-CALCULATE" in ids
     assert "DAX-MARKED-DATE-TABLE" in ids
+
+
+def test_markdown_format():
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "markdown"]).output
+    assert out.startswith("# coop-dax-review report")
+    assert "## Findings" in out
+    assert "DAX-" in out
+
+
+def test_output_writes_text_report_to_file(tmp_path):
+    report = tmp_path / "report.txt"
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "-o", str(report)])
+    assert result.exit_code == 0
+    body = report.read_text(encoding="utf-8")
+    assert "Advisory only" in body and "DAX-" in body  # the report went to the file
+    # the report body stays off the streams; only the "written to" notice (stderr) shows
+    assert "Advisory only" not in result.output
+    assert "DAX-" not in result.output
+    assert str(report) in result.stderr  # the path is announced on stderr
+
+
+def test_html_format_writes_file_opens_nothing_under_test(tmp_path):
+    report = tmp_path / "out.html"
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "html", "-o", str(report)])
+    assert result.exit_code == 0
+    assert report.exists()
+    body = report.read_text(encoding="utf-8")
+    assert body.startswith("<!DOCTYPE html>")
+    assert "</html>" in body
+    assert "DAX-" in body  # at least one rule fired in the fixtures
+    assert "HTML report written to" in result.output
+    assert str(report.resolve()) in result.output  # the path is shown for the user
+
+
+def test_html_defaults_to_a_file_in_cwd():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(cli, ["check", str(FIXTURES), "--format", "html"])
+        assert result.exit_code == 0
+        assert Path("coop-dax-review-report.html").exists()
+
+
+def test_interactive_picker_falls_back_without_subdirs(tmp_path):
+    from coop_dax_review.cli import _interactive_pick_paths
+
+    (tmp_path / "model.tmdl").write_text("x\n", encoding="utf-8")
+    # No subfolders -> picker returns None so the caller uses the default path.
+    assert _interactive_pick_paths(tmp_path) is None
+
+
+def test_interactive_picker_all_selected_returns_root(tmp_path, monkeypatch):
+    from coop_dax_review import cli as climod
+
+    (tmp_path / "Sales.SemanticModel").mkdir()
+    (tmp_path / "Finance.SemanticModel").mkdir()
+
+    class _FakeCheckbox:
+        def __init__(self, *a, **k):
+            pass
+
+        def ask(self):  # simulate the user keeping everything checked
+            return [tmp_path / "Finance.SemanticModel", tmp_path / "Sales.SemanticModel"]
+
+    import questionary
+
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox())
+    monkeypatch.setattr(questionary, "Choice", lambda **k: k.get("value"))
+    assert climod._interactive_pick_paths(tmp_path) == [tmp_path]  # all -> scan root
+
+
+def test_update_prints_command_and_never_applies(monkeypatch):
+    from coop_dax_review import upgrade as upmod
+
+    plan = upmod.UpgradePlan("pipx", None, "0.1.0", "already on the latest release (0.1.0)", pip_spec=None)
+    monkeypatch.setattr(upmod, "build_plan", lambda *a, **k: plan)
+    result = CliRunner().invoke(cli, ["update"])
+    assert result.exit_code == 0
+    assert "does not update itself" in result.output
+    assert "pipx upgrade coop-dax-review" in result.output
+    # never self-applies: no trace of the old apply path's output
+    assert "ran:" not in result.output
+    assert "Done." not in result.output
+
+
+def test_upgrade_alias_also_prints_command(monkeypatch):
+    from coop_dax_review import upgrade as upmod
+
+    plan = upmod.UpgradePlan("pipx", None, "0.1.0", "latest release is 0.2.0", pip_spec=None)
+    monkeypatch.setattr(upmod, "build_plan", lambda *a, **k: plan)
+    result = CliRunner().invoke(cli, ["upgrade"])
+    assert result.exit_code == 0
+    assert "pipx upgrade coop-dax-review" in result.output
+
+
+def test_removed_upgrade_flags_are_rejected():
+    # --check / --yes were dropped when self-apply was removed; pin that they error.
+    assert CliRunner().invoke(cli, ["upgrade", "--check"]).exit_code != 0
+    assert CliRunner().invoke(cli, ["update", "--yes"]).exit_code != 0
+
+
+def test_should_open_report_tri_state(monkeypatch):
+    from coop_dax_review import cli as climod
+
+    monkeypatch.setattr(climod, "_stdio_interactive", lambda: False)
+    assert climod._should_open_report(True) is True  # explicit --open wins
+    assert climod._should_open_report(False) is False  # explicit --no-open wins
+    assert climod._should_open_report(None) is False  # auto -> follows the (non-)tty
+    monkeypatch.setattr(climod, "_stdio_interactive", lambda: True)
+    assert climod._should_open_report(None) is True
+
+
+def test_html_does_not_open_browser_in_auto_mode_under_test(tmp_path, monkeypatch):
+    import webbrowser
+
+    calls: list = []
+    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: calls.append(a))
+    report = tmp_path / "o.html"
+    # No --open: auto mode + non-interactive runner -> must NOT open a browser.
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "html", "-o", str(report)])
+    assert result.exit_code == 0
+    assert calls == []
+
+
+def test_html_no_open_flag_suppresses_open(tmp_path, monkeypatch):
+    import webbrowser
+
+    calls: list = []
+    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: calls.append(a))
+    report = tmp_path / "o.html"
+    result = CliRunner().invoke(
+        cli, ["check", str(FIXTURES), "--format", "html", "-o", str(report), "--no-open"]
+    )
+    assert result.exit_code == 0
+    assert calls == []
+
+
+def test_html_explicit_open_overrides_non_interactive(tmp_path, monkeypatch):
+    import webbrowser
+
+    calls: list = []
+    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: calls.append(a))
+    report = tmp_path / "o.html"
+    # Explicit --open overrides the interactive-terminal gate and opens the file URI.
+    result = CliRunner().invoke(
+        cli, ["check", str(FIXTURES), "--format", "html", "-o", str(report), "--open"]
+    )
+    assert result.exit_code == 0
+    assert len(calls) == 1
+    assert calls[0][0].startswith("file://")
+
+
+def test_interactive_picker_partial_selection_returns_subset(tmp_path, monkeypatch):
+    from coop_dax_review import cli as climod
+
+    (tmp_path / "Sales.SemanticModel").mkdir()
+    (tmp_path / "Finance.SemanticModel").mkdir()
+
+    class _FakeCheckbox:
+        def __init__(self, *a, **k):
+            pass
+
+        def ask(self):  # the user kept only one of the two folders
+            return [tmp_path / "Sales.SemanticModel"]
+
+    import questionary
+
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox())
+    monkeypatch.setattr(questionary, "Choice", lambda **k: k.get("value"))
+    # A subset -> exactly those folders (NOT the root).
+    assert climod._interactive_pick_paths(tmp_path) == [tmp_path / "Sales.SemanticModel"]
+
+
+def test_interactive_picker_cancelled_returns_none(tmp_path, monkeypatch):
+    from coop_dax_review import cli as climod
+
+    (tmp_path / "Sales.SemanticModel").mkdir()
+    (tmp_path / "Finance.SemanticModel").mkdir()
+
+    class _FakeCheckbox:
+        def __init__(self, *a, **k):
+            pass
+
+        def ask(self):  # user pressed ESC / selected nothing
+            return None
+
+    import questionary
+
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox())
+    monkeypatch.setattr(questionary, "Choice", lambda **k: k.get("value"))
+    assert climod._interactive_pick_paths(tmp_path) is None

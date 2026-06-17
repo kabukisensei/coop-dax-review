@@ -11,6 +11,16 @@ column types, hidden FKs, key summarizeBy, display folders, explicit measures) a
 tested (`coop-dax-review rules` lists all 24). The foundation was adversarially reviewed (20
 confirmed issues fixed) and every rule has a fires + a compliant case; precision issues found by
 per-rule verifiers are fixed and pinned in `tests/test_regressions.py` / `tests/test_m5*.py`.
+The UX surface was then brought to parity with `coop-sql-review`: `check` gained `--format
+markdown|html` + `-o/--output` and a self-contained, branded **HTML report** (inline CSS + base64
+logo in `data/cooptimize-logo.png`, `report.to_html`/`to_markdown`) that always writes to a file and
+opens in the browser (`--open/--no-open`, auto-gated to interactive terminals via
+`_should_open_report`); an interactive **folder picker** (`questionary`, `_interactive_pick_paths`)
+appears when `check` is run with no paths in a TTY; and `upgrade`/`update` now **print** the install-
+appropriate command (`upgrade_command` -> `pipx upgrade …`, etc.) instead of self-applying, since a
+package manager can't replace the running tool (the `--check`/`--yes` flags and `apply_plan` call
+path were dropped). New dep: `questionary>=2.0`. Tests in `tests/test_report.py`,
+`tests/test_upgrade.py`, and the expanded `tests/test_cli.py`.
 Remaining: **M6** (publish to PyPI + wire into the company analytics agent). Any further
 `standards-proposed-additions.md` items need the user to merge the section into `docs/standards.md`
 (the authored canon) first; keep the bundled copy `src/coop_dax_review/data/standards.md`
@@ -94,17 +104,23 @@ TMDL/.bim model → parse → catalog {tables, columns, measures(+DAX), relation
 Rule taxonomy and the full Tier-1 vs Tier-2/3 build order are in `RULES.md`. The `Method` column
 there (`text` / `catalog` / `model` / `agent`) tells you what context each rule needs.
 
-## CLI (proposed)
+## CLI
 
 ```
-coop-dax-review check [MODEL_PATHS...] --standards <path> [--format text|json] [--min-severity ...] [--strict]
+coop-dax-review check [MODEL_PATHS...] --standards <path> [--format text|json|markdown|html]
+                      [-o FILE] [--no-open] [--min-severity ...] [--strict]
 coop-dax-review rules
+coop-dax-review update            # prints the command to update; never self-applies
 coop-dax-review --version
 ```
 
-- Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`.
+- Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
+  `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.
 - Default exit **0** (advisory). `--strict` is the opt-in gate that can return non-zero.
 - `--standards` defaults to bundled `docs/standards.md`.
+- `--format html` always writes a self-contained report file (default
+  `coop-dax-review-report.html`, or `-o`), prints its path, and opens it in the browser
+  (`--no-open` to skip; auto-suppressed off-TTY). `--format markdown`/text honor `-o` or print.
 
 ## Agent JSON contract (identical shape to coop-sql-review)
 

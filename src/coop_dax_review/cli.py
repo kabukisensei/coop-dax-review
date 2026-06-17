@@ -13,6 +13,7 @@ legacy ``.bim`` file. Directories are searched recursively.
 from __future__ import annotations
 
 import logging
+import shlex
 import sys
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from coop_dax_review.finding import SEVERITIES
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.tmdl import group_tmdl_files, parse_tmdl_model
-from coop_dax_review.report import console_lines, json_text, log_text
+from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown
 from coop_dax_review.rules import all_rules
 from coop_dax_review.standards import (
     RuleConfig,
@@ -37,6 +38,10 @@ from coop_dax_review.standards import (
 )
 
 _SEVERITY_CHOICE = click.Choice(SEVERITIES)
+
+# Where an HTML report lands when the user doesn't pass -o: a discoverable,
+# re-openable name in the working directory (overwritten on each run).
+_DEFAULT_HTML_NAME = "coop-dax-review-report.html"
 
 
 def _display_path(path: Path) -> str:
@@ -133,6 +138,58 @@ def _unreadable_model(disp: str, exc: Exception) -> ModelCatalog:
     return cat
 
 
+def _stdio_interactive() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _should_open_report(open_report: bool | None) -> bool:
+    """Whether to open the HTML report in a browser. An explicit ``--open`` /
+    ``--no-open`` always wins; otherwise it's automatic — open only when running
+    in an interactive terminal (so CI / piped / agent runs never pop a browser).
+    """
+    if open_report is not None:
+        return open_report
+    return _stdio_interactive()
+
+
+def _interactive_pick_paths(root: Path) -> list[Path] | None:
+    """Let the user pick which subfolders to check via a checkbox.
+
+    All folders start selected, so pressing ENTER checks everything (== scan
+    the whole folder). Returns the chosen paths, or None to fall back to the
+    default behavior — no subfolders, questionary unavailable, or cancelled.
+    """
+    try:
+        subdirs = sorted(
+            (d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")),
+            key=lambda d: d.name,
+        )
+    except OSError:
+        return None
+    if not subdirs:
+        return None
+    try:
+        import questionary
+    except ImportError:
+        return None
+    choices = [questionary.Choice(title=f"{d.name}/", value=d, checked=True) for d in subdirs]
+    try:
+        selected = questionary.checkbox(
+            "Folders to check (all selected; SPACE to toggle, ENTER to confirm):", choices=choices
+        ).ask()
+    except (OSError, EOFError):
+        return None
+    if not selected:
+        return None
+    # Everything selected -> scan the root (also catches loose top-level models).
+    if len(selected) == len(subdirs):
+        return [root]
+    return list(selected)
+
+
 @click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="coop-dax-review")
 @click.pass_context
@@ -157,7 +214,27 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--config", "config_path", default=None, help="Path to a rules.yml (default: alongside standards)."
 )
-@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text", show_default=True)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json", "markdown", "html"]),
+    default="text",
+    show_default=True,
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(),
+    default=None,
+    help="Write the report to this file instead of the screen (HTML always writes to a file).",
+)
+@click.option(
+    "--open/--no-open",
+    "open_report",
+    default=None,
+    help="Open the HTML report in your browser (default: auto - only in an interactive terminal).",
+)
 @click.option(
     "--min-severity",
     type=_SEVERITY_CHOICE,
@@ -180,6 +257,8 @@ def check(
     standards_path: str | None,
     config_path: str | None,
     fmt: str,
+    output_path: str | None,
+    open_report: bool | None,
     min_severity: str,
     log_file: str | None,
     strict: bool,
@@ -193,6 +272,12 @@ def check(
     config = RuleConfig.load(Path(config_path) if config_path else default_config_path(std_path))
     rules = apply_config(all_rules(), config)
 
+    # With no paths in an interactive terminal, offer a folder picker.
+    if not paths and _stdio_interactive():
+        picked = _interactive_pick_paths(Path("."))
+        if picked is not None:
+            paths = tuple(str(p) for p in picked)
+
     tmdl_files, bim_files = discover_inputs(paths)
     if not tmdl_files and not bim_files:
         click.echo("No TMDL (.tmdl) or .bim models found.", err=True)
@@ -202,11 +287,41 @@ def check(
     result = run_rules(catalogs, rules)
     result = result.filtered(min_severity)
 
+    standards = standards_info(std_path)
     if fmt == "json":
-        click.echo(json_text(result, version=__version__, standards=standards_info(std_path)), nl=False)
+        rendered = json_text(result, version=__version__, standards=standards)
+    elif fmt == "markdown":
+        rendered = to_markdown(result, version=__version__, standards=standards) + "\n"
+    elif fmt == "html":
+        rendered = to_html(result, version=__version__, standards=standards)
     else:
-        for line in console_lines(result):
-            click.echo(line)
+        rendered = "\n".join(console_lines(result)) + "\n"
+
+    if fmt == "html":
+        # HTML is meant to be viewed in a browser: always write it to a file (a
+        # default name when -o is omitted), print the path, and open it.
+        target = Path(output_path) if output_path else Path(_DEFAULT_HTML_NAME)
+        try:
+            target.write_text(rendered, encoding="utf-8", newline="\n")
+        except OSError as exc:
+            raise click.ClickException(f"could not write report to {target}: {exc}") from exc
+        resolved = target.resolve()
+        click.echo(f"HTML report written to {resolved.as_posix()}")
+        if _should_open_report(open_report):
+            import webbrowser
+
+            try:
+                webbrowser.open(resolved.as_uri())
+            except Exception:
+                pass  # opening is a convenience; never fail the run over it
+    elif output_path:
+        try:
+            Path(output_path).write_text(rendered, encoding="utf-8", newline="\n")
+        except OSError as exc:
+            raise click.ClickException(f"could not write report to {output_path}: {exc}") from exc
+        click.echo(f"Report written to {output_path}", err=True)
+    else:
+        click.echo(rendered, nl=False)
 
     if log_file:
         try:
@@ -247,9 +362,15 @@ def rules_cmd(fmt: str) -> None:
         click.echo(f"  {r.id:28} [{tag:7}] T{r.tier} {r.standard_ref:5} {r.title}")
 
 
-def _run_upgrade(check_only: bool, yes: bool) -> None:
-    """Shared self-update behind both `upgrade` and `update` (the only networked path)."""
-    from coop_dax_review.upgrade import UpgradeError, apply_plan, build_plan
+def _run_upgrade() -> None:
+    """Report version + dependency freshness, then print the exact command to run.
+
+    The ONLY networked command (PyPI / `git fetch`). It never self-updates: a
+    package manager can't reliably replace a program that is currently running
+    (on Windows the console-script .exe is locked), so we show the command for
+    the user to run in a fresh terminal after exiting.
+    """
+    from coop_dax_review.upgrade import build_plan, upgrade_command
 
     plan = build_plan()
     click.echo(f"coop-dax-review {plan.tool_installed} ({plan.install_method}) — {plan.tool_note}")
@@ -264,52 +385,26 @@ def _run_upgrade(check_only: bool, yes: bool) -> None:
                 "unknown": "could not check (offline?)",
             }[dep.kind]
             click.echo(f"  {dep.name:20} {dep.installed:12} {label}")
-    if check_only:
-        return
-    if not yes:
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            click.echo("\nRe-run with --yes to apply in non-interactive environments.", err=True)
-            return
-        if not click.confirm("\nApply the update and any non-breaking dependency updates?", default=True):
-            click.echo("Nothing changed.")
-            return
-    try:
-        executed = apply_plan(plan)
-    except UpgradeError as exc:
-        raise click.ClickException(str(exc)) from exc
-    for command in executed:
-        click.echo(f"ran: {' '.join(command)}", err=True)
-    click.echo("Done. Run `coop-dax-review --version` to confirm.")
-
-
-_UPGRADE_OPTIONS = [
-    click.option("--check", "check_only", is_flag=True, help="Report available updates; change nothing."),
-    click.option("--yes", is_flag=True, help="Apply without asking for confirmation."),
-]
-
-
-def _with_upgrade_options(func):
-    for option in reversed(_UPGRADE_OPTIONS):
-        func = option(func)
-    return func
+    commands = upgrade_command(plan)
+    click.echo("\nThis tool does not update itself. To update, exit coop-dax-review and run:\n")
+    for command in commands:
+        click.echo(f"    {shlex.join(command)}")
 
 
 @cli.command()
-@_with_upgrade_options
-def upgrade(check_only: bool, yes: bool) -> None:
-    """Update coop-dax-review to the latest version (and safe dependency bumps).
+def upgrade() -> None:
+    """Show how to update coop-dax-review (and check dependency freshness).
 
-    The ONLY command that uses the network. Major dependency jumps are
-    reported but never auto-applied.
+    The ONLY command that uses the network. Prints the exact command to run —
+    the tool never replaces itself while running.
     """
-    _run_upgrade(check_only, yes)
+    _run_upgrade()
 
 
 @cli.command()
-@_with_upgrade_options
-def update(check_only: bool, yes: bool) -> None:
-    """Alias for `upgrade` — update coop-dax-review to the latest version."""
-    _run_upgrade(check_only, yes)
+def update() -> None:
+    """Alias for `upgrade` — show how to update coop-dax-review."""
+    _run_upgrade()
 
 
 @cli.command(name="help")

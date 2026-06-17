@@ -25,13 +25,17 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ## Usage
 
 ```sh
-coop-dax-review check [MODEL_PATHS...] [--format text|json] [--min-severity error|warning|info] [--strict]
+coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html] [-o FILE]
+                      [--min-severity error|warning|info] [--strict] [--no-open]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
+coop-dax-review update                # show the command to update (never self-applies)
 coop-dax-review --version
 ```
 
 - `MODEL_PATHS` point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`), any folder of
   `.tmdl` files, or a legacy `.bim` file. Directories are searched recursively; defaults to `.`.
+- **Run it with no paths in a terminal** and it offers a checkbox picker of the subfolders to check
+  (all selected by default — press ENTER to scan everything).
 - **Advisory**: exit code is always `0`. `--strict` is the opt-in CI gate — exit `2` when any
   finding remains at/above `--min-severity`.
 - `--standards <path>` overrides the bundled standards (e.g. point it at a canonical company
@@ -42,7 +46,16 @@ coop-dax-review --version
 ```sh
 coop-dax-review check ./MyModel.SemanticModel
 coop-dax-review check . --format json --strict --min-severity warning
+coop-dax-review check . --format html              # writes a report file and opens it in your browser
+coop-dax-review check . --format markdown -o report.md
 ```
+
+`--format html` produces a self-contained, branded HTML report (inline CSS + embedded logo, no
+network). It is always written to a file — `coop-dax-review-report.html` by default, or wherever
+`-o` points — and the path is printed and opened in your browser (pass `--no-open` to skip the open,
+e.g. in CI). `update`/`upgrade` print the exact command to run yourself (`pipx upgrade
+coop-dax-review`, etc.) rather than self-applying, since a package manager can't replace the tool
+while it is running.
 
 ## What it checks
 

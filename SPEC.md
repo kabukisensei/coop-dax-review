@@ -4,8 +4,9 @@
 An **offline, advisory DAX/model standards linter** for our Power BI semantic models. It parses
 TMDL (and `.bim`) models, checks measures **and model structure** against `docs/standards.md`
 (our standards + Microsoft/Tabular best practices), and surfaces anything that doesn't match.
-**Advisory, never blocking** — it reports; it never edits or stops anything. Two outputs: a
-human report (console / markdown) and **machine JSON for the agent**.
+**Advisory, never blocking** — it reports; it never edits or stops anything. Outputs: a human
+report (console, Markdown, or a self-contained branded **HTML** report) and **machine JSON for
+the agent**.
 
 > Sibling tool to `coop-sql-review` — same architecture and contracts. Build `coop-sql-review` first
 > if possible; this clones the pattern with DAX/model specifics.
@@ -46,16 +47,21 @@ TMDL/.bim model → parse → catalog {tables, columns, measures(+DAX), relation
 
 See `RULES.md` for the taxonomy.
 
-## CLI (proposed)
+## CLI
 ```
-coop-dax-review check [MODEL_PATHS...] --standards <path> [--format text|json] [--min-severity ...] [--strict]
+coop-dax-review check [MODEL_PATHS...] --standards <path> [--format text|json|markdown|html]
+                      [-o FILE] [--no-open] [--min-severity ...] [--strict]
 coop-dax-review rules
+coop-dax-review update            # prints the command to update; never self-applies
 coop-dax-review --version
 ```
-- Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`.
+- Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
+  `check` with no paths in a terminal and a checkbox picker chooses which subfolders to scan.
 - Default exit **0** (advisory); `--strict` opt-in gate.
 - `--standards` defaults to bundled `docs/standards.md`; can point at a canonical company
   standards file.
+- `--format html` writes a self-contained report file (default `coop-dax-review-report.html`, or
+  `-o`), prints its path, and opens it in the browser (`--no-open`, auto-off when non-interactive).
 
 ## Agent integration contract (identical shape to coop-sql-review)
 ```json
