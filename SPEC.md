@@ -38,7 +38,7 @@ then run rules with that context.
 ```
 TMDL/.bim model → parse → catalog {tables, columns, measures(+DAX), relationships}
                                    ↓
-              rule engine (measure-text rules + model-level rules) → Findings → render (text + JSON)
+              rule engine (measure-text rules + model-level rules) → Findings → render (text · JSON · markdown · HTML)
 ```
 - **Rule** = `{id, title, severity, category, standard_ref, check(catalog|measure) -> [Finding]}`.
 - **standards.md drives config** (which rules on + params) via `rules.yml` / front-matter — edit
@@ -49,17 +49,22 @@ See `RULES.md` for the taxonomy.
 
 ## CLI
 ```
-coop-dax-review check [MODEL_PATHS...] --standards <path> [--format text|json|markdown|html]
-                      [-o FILE] [--no-open] [--min-severity ...] [--strict]
+coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
+                      [--format text|json|markdown|html] [-o FILE] [--open/--no-open]
+                      [--color/--no-color] [--min-severity ...] [--log-file <path>] [--strict]
 coop-dax-review rules
-coop-dax-review update            # prints the command to update; never self-applies
+coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
 ```
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a terminal and a checkbox picker chooses which subfolders to scan.
-- Default exit **0** (advisory); `--strict` opt-in gate.
+- Default exit **0** (advisory); `--strict` exits 2 when any reported finding remains (after the
+  `--min-severity` filter).
 - `--standards` defaults to bundled `docs/standards.md`; can point at a canonical company
-  standards file.
+  standards file. `--log-file` writes a diagnostics log.
+- The default text report is a sectioned terminal report (banner, one section per model with
+  `ERROR`/`WARN`/`INFO` badges, a `SUMMARY` panel); colorized at an interactive terminal and plain
+  ASCII when piped / redirected / `--no-color` / `NO_COLOR`.
 - `--format html` writes a self-contained report file (default `coop-dax-review-report.html`, or
   `-o`), prints its path, and opens it in the browser (`--no-open`, auto-off when non-interactive).
 

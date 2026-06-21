@@ -12,7 +12,7 @@ storage mode); `agent` = judgment → emitted in `agent_review`. **Tier 1** = bu
 | `DAX-NO-NESTED-CALCULATE` | 3 | `CALCULATE` nested inside `CALCULATE` | warning | text | 1 |
 | `DAX-MEASURE-NOT-PREFIXED` | 1 | `Table[X]` where `X` is a measure (measures take no table prefix) | warning | catalog | 1 |
 | `DAX-COLUMN-PREFIXED` | 1 | bare `[X]` where `X` is a column (columns need `Table[Col]`) | warning | catalog | 1 |
-| `DAX-MEASURE-CATEGORY` | 1 | measure name not `[Category: Name]` | warning | text | 1 |
+| `DAX-MEASURE-CATEGORY` | 1 | measure name not `[Category: Name]` | warning | catalog | 1 |
 | `DAX-BIDI-RELATIONSHIP` | 7 | relationship with bidirectional cross-filter | warning | model | 1 |
 | `DAX-MARKED-DATE-TABLE` | 8 | time-intel funcs used but no marked Date table | warning | model+text | 1 |
 | `DAX-FILTER-TABLE-IN-CALCULATE` | 4 | `CALCULATE(.., FILTER(<table>, <col predicate>))` where a boolean filter suffices | warning | text | 2 |

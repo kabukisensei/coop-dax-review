@@ -12,7 +12,7 @@ tokens stored anywhere.
 ## Part A — Put the code on GitHub (one time)
 
 The repo is already `git init`'d on `main` with `origin` set to
-`https://github.com/kabukisensei/coop-dax-review.git` and two commits. The CI/publish workflows and
+`https://github.com/kabukisensei/coop-dax-review.git`. The CI/publish workflows and
 `pyproject.toml` assume the owner/name `kabukisensei/coop-dax-review`; use that or update those
 references if you pick a different name.
 

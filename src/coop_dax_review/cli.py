@@ -13,6 +13,7 @@ legacy ``.bim`` file. Directories are searched recursively.
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -145,6 +146,20 @@ def _stdio_interactive() -> bool:
         return False
 
 
+def _use_color(color_flag: bool | None, output_path: str | None) -> bool:
+    """Whether to colorize the terminal report. An explicit ``--color`` /
+    ``--no-color`` wins; otherwise auto: color only when writing to an
+    interactive stdout (never to a file) and ``NO_COLOR`` is unset."""
+    if color_flag is not None:
+        return color_flag
+    if output_path or os.environ.get("NO_COLOR"):
+        return False
+    try:
+        return sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
 def _should_open_report(open_report: bool | None) -> bool:
     """Whether to open the HTML report in a browser. An explicit ``--open`` /
     ``--no-open`` always wins; otherwise it's automatic — open only when running
@@ -236,6 +251,12 @@ def cli(ctx: click.Context) -> None:
     help="Open the HTML report in your browser (default: auto - only in an interactive terminal).",
 )
 @click.option(
+    "--color/--no-color",
+    "color_flag",
+    default=None,
+    help="Colorize the text report (default: auto - only at an interactive terminal).",
+)
+@click.option(
     "--min-severity",
     type=_SEVERITY_CHOICE,
     default="info",
@@ -259,6 +280,7 @@ def check(
     fmt: str,
     output_path: str | None,
     open_report: bool | None,
+    color_flag: bool | None,
     min_severity: str,
     log_file: str | None,
     strict: bool,
@@ -288,6 +310,7 @@ def check(
     result = result.filtered(min_severity)
 
     standards = standards_info(std_path)
+    use_color = fmt == "text" and _use_color(color_flag, output_path)
     if fmt == "json":
         rendered = json_text(result, version=__version__, standards=standards)
     elif fmt == "markdown":
@@ -295,7 +318,8 @@ def check(
     elif fmt == "html":
         rendered = to_html(result, version=__version__, standards=standards)
     else:
-        rendered = "\n".join(console_lines(result)) + "\n"
+        body = console_lines(result, version=__version__, standards=standards, color=use_color)
+        rendered = "\n".join(body) + "\n"
 
     if fmt == "html":
         # HTML is meant to be viewed in a browser: always write it to a file (a
@@ -321,7 +345,7 @@ def check(
             raise click.ClickException(f"could not write report to {output_path}: {exc}") from exc
         click.echo(f"Report written to {output_path}", err=True)
     else:
-        click.echo(rendered, nl=False)
+        click.echo(rendered, nl=False, color=use_color)
 
     if log_file:
         try:

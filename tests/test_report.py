@@ -2,7 +2,7 @@
 
 from coop_dax_review.engine import Result
 from coop_dax_review.finding import AgentReviewItem, Finding
-from coop_dax_review.report import to_html, to_json, to_markdown
+from coop_dax_review.report import console_lines, to_html, to_json, to_markdown
 
 STANDARDS = {"path": "docs/standards.md", "sha256": "abc123"}
 
@@ -131,6 +131,31 @@ def test_html_sorts_models_and_omits_zero_line():
     out = to_html(_multi_model_result(), version="0.1.0", standards=STANDARDS)
     assert out.index(">Alpha<") < out.index(">Zeta<")  # model cards sorted
     assert "model.tmdl:0" not in out  # line 0 renders without the :0 suffix
+
+
+def test_console_is_report_styled_and_plain_by_default():
+    text = "\n".join(console_lines(_result(), version="0.2.0", standards=STANDARDS))
+    assert "coop-dax-review" in text  # banner
+    assert "DAX / model standards report" in text
+    assert "===" in text  # banner / summary rules
+    assert "SUMMARY" in text
+    assert "1 warning" in text  # the fixture has 1 warning, 1 info
+    assert "agent review" in text
+    assert "Advisory only" in text
+    assert "\033[" not in text  # no ANSI unless color is requested
+
+
+def test_console_color_adds_ansi_only_when_requested():
+    assert "\033[" in "\n".join(console_lines(_result(), color=True))
+    assert "\033[" not in "\n".join(console_lines(_result(), color=False))
+
+
+def test_console_chrome_is_ascii_safe_even_colored():
+    # An empty result is pure chrome; it must be ASCII for a legacy Windows
+    # console — and stay ASCII even colored (ANSI escape bytes are ASCII).
+    assert "\n".join(console_lines(Result(models_checked=1))).isascii()
+    assert "\n".join(console_lines(Result(models_checked=1), color=True)).isascii()
+    assert "no issues found" in "\n".join(console_lines(Result(models_checked=1)))
 
 
 def test_markdown_and_html_render_escaped_diagnostics():

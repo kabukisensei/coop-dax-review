@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: M0–M5 done — 24 rules implemented
+## Status: M0–M5 done + published to PyPI (0.2.0) — 24 rules (M6 agent-wiring remaining)
 
 Scaffold, model catalog, TMDL/.bim parsers, rule engine, text/JSON renderers, standards-driven
 config, the full Tier-1/2/3 + agent rule set from `RULES.md` (17 rules), AND the M5 best-practice
@@ -19,9 +19,14 @@ opens in the browser (`--open/--no-open`, auto-gated to interactive terminals vi
 appears when `check` is run with no paths in a TTY; and `upgrade`/`update` now **print** the install-
 appropriate command (`upgrade_command` -> `pipx upgrade …`, etc.) instead of self-applying, since a
 package manager can't replace the running tool (the `--check`/`--yes` flags and `apply_plan` call
-path were dropped). New dep: `questionary>=2.0`. Tests in `tests/test_report.py`,
+path were dropped). The terminal report (`--format text`) was then restyled into a **sectioned
+report** — banner, one section per model with `ERROR`/`WARN`/`INFO` severity badges, a `SUMMARY`
+panel — with ANSI color auto-enabled at an interactive terminal and plain ASCII when piped /
+redirected / `--no-color` / `NO_COLOR` (`report.console_lines(..., color=)`, cli `_use_color`,
+`--color/--no-color`). New dep: `questionary>=2.0`. Tests in `tests/test_report.py`,
 `tests/test_upgrade.py`, and the expanded `tests/test_cli.py`.
-Remaining: **M6** (publish to PyPI + wire into the company analytics agent). Any further
+Remaining: **M6** — wire into the company analytics agent. (Publishing is done: coop-dax-review
+**0.2.0** is live on PyPI via the `v*`-tag trusted-publishing workflow.) Any further
 `standards-proposed-additions.md` items need the user to merge the section into `docs/standards.md`
 (the authored canon) first; keep the bundled copy `src/coop_dax_review/data/standards.md`
 byte-identical. Background reading: `SPEC.md`, `RULES.md`, `docs/standards.md`.
@@ -65,8 +70,9 @@ clean). Add a fires + a compliant case to `tests/test_rules.py`.
 `coop-dax-review` — an **offline, advisory** DAX/model standards linter for Power BI semantic
 models. It parses TMDL (and `.bim`) models, builds a model catalog, checks measures **and model
 structure** against `docs/standards.md`, and reports findings. It is **advisory and never blocking**
-— it reports, it never edits or stops anything. Two outputs: a human report (console/markdown) and
-**machine JSON for the company analytics agent**.
+— it reports, it never edits or stops anything. Outputs: a human report (a sectioned, colorized
+terminal report, Markdown, or a self-contained branded HTML file) and **machine JSON for the
+company analytics agent**.
 
 Sibling tool to `coop-sql-review` (same architecture/contracts). Reference implementation to clone
 from: the `coop-data-doc` package (PyPI: `coop-data-doc`).
@@ -88,7 +94,7 @@ from: the `coop-data-doc` package (PyPI: `coop-data-doc`).
 ```
 TMDL/.bim model → parse → catalog {tables, columns, measures(+DAX), relationships, storage_mode, date_table}
                                    ↓
-              rule engine (measure-text rules + model-level rules) → Findings → render (text + JSON)
+              rule engine (measure-text rules + model-level rules) → Findings → render (text · JSON · markdown · HTML)
 ```
 
 - **Build the model catalog first** (milestone M1). It's the foundation: most Tier-1 rules need it,
@@ -107,17 +113,22 @@ there (`text` / `catalog` / `model` / `agent`) tells you what context each rule 
 ## CLI
 
 ```
-coop-dax-review check [MODEL_PATHS...] --standards <path> [--format text|json|markdown|html]
-                      [-o FILE] [--no-open] [--min-severity ...] [--strict]
+coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
+                      [--format text|json|markdown|html] [-o FILE] [--open/--no-open]
+                      [--color/--no-color] [--min-severity ...] [--log-file <path>] [--strict]
 coop-dax-review rules
-coop-dax-review update            # prints the command to update; never self-applies
+coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
 ```
 
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.
 - Default exit **0** (advisory). `--strict` is the opt-in gate that can return non-zero.
-- `--standards` defaults to bundled `docs/standards.md`.
+- `--standards` defaults to bundled `docs/standards.md`; `--log-file` writes a diagnostics log.
+- The default `--format text` is a **sectioned report** (banner, one section per model with
+  `ERROR`/`WARN`/`INFO` badges, a `SUMMARY` panel). Color is automatic at an interactive terminal
+  and plain ASCII when piped / redirected / `--no-color` / `NO_COLOR`; `--color`/`--no-color`
+  overrides the auto-detection.
 - `--format html` always writes a self-contained report file (default
   `coop-dax-review-report.html`, or `-o`), prints its path, and opens it in the browser
   (`--no-open` to skip; auto-suppressed off-TTY). `--format markdown`/text honor `-o` or print.

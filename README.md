@@ -3,8 +3,9 @@
 Offline, **advisory** DAX/model standards linter for our Power BI semantic models. It parses
 TMDL (and legacy `.bim`) models, builds a model catalog, checks measures **and model structure**
 against `docs/standards.md` (our DAX standards + Microsoft/Tabular best practices), and surfaces
-anything that doesn't match. **It never edits or blocks — it only reports.** Two outputs: a human
-console report and **machine JSON for the company analytics agent**.
+anything that doesn't match. **It never edits or blocks — it only reports.** Human reports (a
+sectioned, colorized terminal report, Markdown, or a self-contained branded HTML file) and
+**machine JSON for the company analytics agent**.
 
 Sibling tool to [`coop-sql-review`](https://github.com/kabukisensei/coop-sql-review) — same
 architecture and contracts.
@@ -12,7 +13,7 @@ architecture and contracts.
 ## Install
 
 ```sh
-pipx install coop-dax-review        # once on PyPI
+pipx install coop-dax-review        # from PyPI
 ```
 
 Use `pipx`, not system `pip`, so the tool stays isolated from other CLIs (`ms-fabric-cli`,
@@ -26,9 +27,10 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 ```sh
 coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html] [-o FILE]
-                      [--min-severity error|warning|info] [--strict] [--no-open]
+                      [--open/--no-open] [--color/--no-color] [--log-file FILE]
+                      [--min-severity error|warning|info] [--strict]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
-coop-dax-review update                # show the command to update (never self-applies)
+coop-dax-review upgrade               # show the command to update (never self-applies; alias: update)
 coop-dax-review --version
 ```
 
@@ -50,10 +52,15 @@ coop-dax-review check . --format html              # writes a report file and op
 coop-dax-review check . --format markdown -o report.md
 ```
 
+The default `--format text` is a **sectioned terminal report**: a banner, one section per model with
+`ERROR`/`WARN`/`INFO` severity badges, and a `SUMMARY` panel. It's colorized automatically when
+you're at a terminal and falls back to plain text when piped or redirected (override with
+`--color`/`--no-color`; `NO_COLOR` is respected).
+
 `--format html` produces a self-contained, branded HTML report (inline CSS + embedded logo, no
 network). It is always written to a file — `coop-dax-review-report.html` by default, or wherever
 `-o` points — and the path is printed and opened in your browser (pass `--no-open` to skip the open,
-e.g. in CI). `update`/`upgrade` print the exact command to run yourself (`pipx upgrade
+e.g. in CI). `upgrade`/`update` print the exact command to run yourself (`pipx upgrade
 coop-dax-review`, etc.) rather than self-applying, since a package manager can't replace the tool
 while it is running.
 
@@ -107,7 +114,7 @@ folders, explicit measures); `docs/standards-proposed-additions.md` is the origi
   "findings": [{"rule_id":"...","severity":"warning","model":"Sales","file":"...","line":12,
                 "object":"[Sales: Revenue YTD]","message":"...","standard_ref":"§3"}],
   "summary": {"error":0,"warning":2,"info":4},
-  "agent_review": [{"rule_id":"...","object":"[...]","note":"...","standard_ref":"§5"}],
+  "agent_review": [{"rule_id":"...","model":"Sales","file":"...","line":40,"object":"[...]","note":"...","standard_ref":"§5"}],
   "diagnostics": [{"severity":"warning","category":"parse_failed","file":"...","message":"..."}]
 }
 ```
