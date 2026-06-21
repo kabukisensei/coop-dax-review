@@ -29,6 +29,7 @@ class Rule:
     standard_ref: str  # section in standards.md, e.g. "§3"
     tier: int
     kind: str = "deterministic"  # "deterministic" | "agent"
+    default_enabled: bool = True  # off-by-default rules must be turned on in rules.yml
     check: Optional[Callable[["RuleContext"], list[Finding]]] = None
     detect: Optional[Callable[["RuleContext"], list[AgentReviewItem]]] = None
 

@@ -21,12 +21,13 @@ from pathlib import Path
 import click
 
 from coop_dax_review import __version__
-from coop_dax_review.diagnostics import FILE_UNREADABLE, PARSE_FAILED, Diagnostic
+from coop_dax_review.diagnostics import CONFIG_UNKNOWN_RULE, FILE_UNREADABLE, PARSE_FAILED, Diagnostic
 from coop_dax_review.engine import run_rules
 from coop_dax_review.finding import SEVERITIES
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.tmdl import group_tmdl_files, parse_tmdl_model
+from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown
 from coop_dax_review.rules import all_rules
 from coop_dax_review.standards import (
@@ -99,7 +100,22 @@ def build_catalogs(tmdl_files: list[Path], bim_files: list[Path]) -> list[ModelC
     for _model_name, disp, exc in unreadable:
         catalogs.append(_unreadable_model(disp, exc))  # one bad file degrades only its model
     for model_name in sorted(groups):
-        catalogs.append(parse_tmdl_model(model_name, groups[model_name]))
+        files = groups[model_name]
+        try:
+            catalogs.append(parse_tmdl_model(model_name, files))
+        except Exception as exc:  # malformed TMDL / unexpected shape — degrade, never crash
+            disp = next(iter(files), model_name)
+            cat = ModelCatalog(name=model_name, file=disp)
+            cat.diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    category=PARSE_FAILED,
+                    file=disp,
+                    line=0,
+                    message=f"could not parse TMDL model: {type(exc).__name__}: {exc}",
+                )
+            )
+            catalogs.append(cat)
 
     for path in bim_files:
         disp = display.get(path) or _display_path(path)
@@ -291,8 +307,10 @@ def check(
     except StandardsError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    config = RuleConfig.load(Path(config_path) if config_path else default_config_path(std_path))
+    cfg_path = Path(config_path) if config_path else default_config_path(std_path)
+    config = RuleConfig.load(cfg_path)
     rules = apply_config(all_rules(), config)
+    unknown_rules = config.unknown_rule_ids({r.id for r in all_rules()})
 
     # With no paths in an interactive terminal, offer a folder picker.
     if not paths and _stdio_interactive():
@@ -300,13 +318,36 @@ def check(
         if picked is not None:
             paths = tuple(str(p) for p in picked)
 
+    # A path the user typed that doesn't exist is almost always a typo — call it
+    # out so it isn't silently indistinguishable from a clean scan.
+    missing = [p for p in paths if not Path(p).exists()]
+    for p in missing:
+        click.echo(f"path not found: {p}", err=True)
+
     tmdl_files, bim_files = discover_inputs(paths)
     if not tmdl_files and not bim_files:
-        click.echo("No TMDL (.tmdl) or .bim models found.", err=True)
+        if not missing:
+            click.echo("No TMDL (.tmdl) or .bim models found.", err=True)
         return
 
+    # Stderr-only + TTY-gated, so it never pollutes the report (stdout) or a
+    # redirected --output file — a big model folder no longer looks hung.
+    progress = Progress(should_enable(quiet=False))
+    progress.line(f"Checking {len(tmdl_files) + len(bim_files)} model file(s)...")
     catalogs = build_catalogs(tmdl_files, bim_files)
     result = run_rules(catalogs, rules)
+    for rule_id in unknown_rules:
+        result.diagnostics.append(
+            Diagnostic(
+                severity="warning",
+                category=CONFIG_UNKNOWN_RULE,
+                file=cfg_path.as_posix(),
+                line=0,
+                message=f"rules.yml: unknown rule id '{rule_id}' - ignored",
+            )
+        )
+    if unknown_rules:
+        result.diagnostics.sort(key=lambda d: d.sort_key())
     result = result.filtered(min_severity)
 
     standards = standards_info(std_path)
@@ -375,15 +416,17 @@ def rules_cmd(fmt: str) -> None:
                 "standard_ref": r.standard_ref,
                 "tier": r.tier,
                 "kind": r.kind,
+                "default_enabled": r.default_enabled,
             }
             for r in rules
         ]
         click.echo(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True))
         return
-    click.echo(f"{len(rules)} rule(s):\n")
+    click.echo(f"{len(rules)} rule(s) ('off' = disabled by default; enable in rules.yml):\n")
     for r in rules:
         tag = "agent" if r.kind == "agent" else r.severity
-        click.echo(f"  {r.id:28} [{tag:7}] T{r.tier} {r.standard_ref:5} {r.title}")
+        off = "" if r.default_enabled else "  [off by default]"
+        click.echo(f"  {r.id:28} [{tag:7}] T{r.tier} {r.standard_ref:5} {r.title}{off}")
 
 
 def _run_upgrade() -> None:

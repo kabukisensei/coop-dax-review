@@ -47,10 +47,51 @@ def test_strict_exit_zero_when_filtered_below_threshold():
     assert result.exit_code == 0
 
 
-def test_no_models_found_is_graceful():
+def test_nonexistent_path_is_called_out_not_silently_clean():
+    # A typo'd path must not look identical to a clean scan.
     result = CliRunner().invoke(cli, ["check", str(FIXTURES / "nonexistent")])
     assert result.exit_code == 0
+    assert "path not found" in result.output
+    assert "No TMDL" not in result.output  # the path error explains it; don't double-message
+
+
+def test_empty_dir_reports_no_models_found(tmp_path):
+    result = CliRunner().invoke(cli, ["check", str(tmp_path)])
+    assert result.exit_code == 0
     assert "No TMDL" in result.output
+
+
+def test_malformed_tmdl_does_not_crash_the_run(monkeypatch):
+    # A TMDL parse error must degrade to a diagnostic, never abort the run.
+    from coop_dax_review import cli as climod
+
+    def _boom(name, files):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(climod, "parse_tmdl_model", _boom)
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
+    assert result.exit_code == 0  # advisory: never crash
+    assert "could not parse TMDL" in result.output
+
+
+def test_unknown_rule_id_in_config_warns(tmp_path):
+    cfg = tmp_path / "rules.yml"
+    cfg.write_text("rules:\n  DAX-NOPE-NOT-A-RULE:\n    enabled: false\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg)])
+    assert result.exit_code == 0
+    assert "unknown rule id 'DAX-NOPE-NOT-A-RULE'" in result.output
+
+
+def test_agent_review_items_listed_in_terminal():
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES)]).output
+    assert "Agent review (judgment required)" in out  # the section, not just the count
+    assert "JUDGE" in out
+
+
+def test_json_includes_models_checked():
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "json"]).output
+    payload = json.loads(out)
+    assert payload["models_checked"] >= 1
 
 
 def test_rules_command_lists_every_rule():
