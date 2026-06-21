@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: M0–M5 done + published to PyPI (0.2.0) — 24 rules (M6 agent-wiring remaining)
+## Status: M0–M5 done + published to PyPI (0.3.0) — 24 rules (M6 agent-wiring remaining)
 
 Scaffold, model catalog, TMDL/.bim parsers, rule engine, text/JSON renderers, standards-driven
 config, the full Tier-1/2/3 + agent rule set from `RULES.md` (17 rules), AND the M5 best-practice
@@ -26,7 +26,7 @@ redirected / `--no-color` / `NO_COLOR` (`report.console_lines(..., color=)`, cli
 `--color/--no-color`). New dep: `questionary>=2.0`. Tests in `tests/test_report.py`,
 `tests/test_upgrade.py`, and the expanded `tests/test_cli.py`.
 Remaining: **M6** — wire into the company analytics agent. (Publishing is done: coop-dax-review
-**0.2.0** is live on PyPI via the `v*`-tag trusted-publishing workflow.) Any further
+**0.3.0** is live on PyPI via the `v*`-tag trusted-publishing workflow.) Any further
 `standards-proposed-additions.md` items need the user to merge the section into `docs/standards.md`
 (the authored canon) first; keep the bundled copy `src/coop_dax_review/data/standards.md`
 byte-identical. Background reading: `SPEC.md`, `RULES.md`, `docs/standards.md`.
