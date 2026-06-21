@@ -239,7 +239,13 @@ def test_interactive_picker_all_selected_returns_root(tmp_path, monkeypatch):
 def test_update_prints_command_and_never_applies(monkeypatch):
     from coop_dax_review import upgrade as upmod
 
-    plan = upmod.UpgradePlan("pipx", None, "0.1.0", "already on the latest release (0.1.0)", pip_spec=None)
+    plan = upmod.UpgradePlan(
+        package_name="coop-dax-review",
+        install_method="pipx",
+        checkout=None,
+        tool_installed="0.1.0",
+        tool_note="already on the latest release (0.1.0)",
+    )
     monkeypatch.setattr(upmod, "build_plan", lambda *a, **k: plan)
     result = CliRunner().invoke(cli, ["update"])
     assert result.exit_code == 0
@@ -253,7 +259,13 @@ def test_update_prints_command_and_never_applies(monkeypatch):
 def test_upgrade_alias_also_prints_command(monkeypatch):
     from coop_dax_review import upgrade as upmod
 
-    plan = upmod.UpgradePlan("pipx", None, "0.1.0", "latest release is 0.2.0", pip_spec=None)
+    plan = upmod.UpgradePlan(
+        package_name="coop-dax-review",
+        install_method="pipx",
+        checkout=None,
+        tool_installed="0.1.0",
+        tool_note="latest release is 0.2.0",
+    )
     monkeypatch.setattr(upmod, "build_plan", lambda *a, **k: plan)
     result = CliRunner().invoke(cli, ["upgrade"])
     assert result.exit_code == 0

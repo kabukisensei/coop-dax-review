@@ -77,6 +77,14 @@ company analytics agent**.
 Sibling tool to `coop-sql-review` (same architecture/contracts). Reference implementation to clone
 from: the `coop-data-doc` package (PyPI: `coop-data-doc`).
 
+**Shared core:** the tool-agnostic infrastructure lives in the published
+[`coop-review-core`](https://github.com/kabukisensei/coop-review-core) package (runtime dep). The
+local modules `progress.py`, `diagnostics.py`, `suppressions.py`, `upgrade.py`, and `standards.py`
+are now **thin shims** that re-export / forward to core (baking in this tool's name); `finding.py`
+sources `SEVERITIES`/`severity_rank`/`at_or_above`/`fingerprint` from `coop_review_core.severity` but
+keeps the `model`-carrying `Finding`/`AgentReviewItem`. Fix shared infra in `coop-review-core`; keep
+the tool's own parsers, rules, Rule/RuleContext/Result, and `standards.md` here.
+
 ## Build approach — reuse, do not start from scratch
 
 - **Skeleton**: hatchling `pyproject`, CI matrix, trusted-publishing, `upgrade.py`, `progress.py`,
