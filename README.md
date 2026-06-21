@@ -43,8 +43,15 @@ coop-dax-review --version
   finding remains at/above `--min-severity`.
 - `--standards <path>` overrides the bundled standards (e.g. point it at a canonical company
   standards file). Its sha256 travels in the JSON so the agent knows which standards a report used.
-- A `rules.yml` beside the standards file (or `--config`) can disable rules / override severities
-  with no rebuild.
+- A `rules.yml` beside the standards file (or `--config`) can disable rules, override severities,
+  and **tune thresholds** — all with no rebuild. For example, raise what counts as a "non-trivial"
+  measure:
+  ```yaml
+  rules:
+    DAX-VAR-RETURN:
+      params: { min_functions: 5 }   # also: DAX-COMPLEX-NO-HEADER.min_vars,
+                                      # DAX-DISPLAY-FOLDERS.min_measures, DAX-SIMPLE-FUNCTIONS.min_calculates
+  ```
 
 ```sh
 coop-dax-review check ./MyModel.SemanticModel

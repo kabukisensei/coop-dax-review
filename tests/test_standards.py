@@ -56,3 +56,23 @@ def test_unknown_rule_ids_detected(tmp_path):
     )
     config = RuleConfig.load(cfg)
     assert config.unknown_rule_ids({"DAX-REAL"}) == ["DAX-TYPO"]
+
+
+def test_params_parsed_and_applied_to_rule(tmp_path):
+    cfg = tmp_path / "rules.yml"
+    cfg.write_text("rules:\n  DAX-VAR-RETURN:\n    params:\n      min_functions: 9\n", encoding="utf-8")
+    config = RuleConfig.load(cfg)
+    assert config.params == {"DAX-VAR-RETURN": {"min_functions": 9}}
+    out = apply_config([_rule("DAX-VAR-RETURN")], config)
+    assert out[0].params == {"min_functions": 9}
+
+
+def test_ctx_param_reads_and_coerces():
+    from coop_dax_review.model import ModelCatalog
+    from coop_dax_review.rules.base import RuleContext
+
+    rule = _rule("DAX-X")
+    rule.params = {"min_functions": "9"}  # YAML may hand us a string
+    ctx = RuleContext(rule, ModelCatalog(name="M", file="f"))
+    assert ctx.param("min_functions", 3) == 9  # coerced to int, matching the default's type
+    assert ctx.param("missing", 3) == 3  # falls back to the default

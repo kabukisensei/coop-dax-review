@@ -32,10 +32,11 @@ _MIN_CALCULATES = 3
 
 def detect(ctx: RuleContext) -> list[AgentReviewItem]:
     items: list[AgentReviewItem] = []
+    min_calculates = ctx.param("min_calculates", _MIN_CALCULATES)  # tunable in rules.yml
     for measure in ctx.catalog.measures:
         text = masked(measure)
         calc_count = len(_CALC_CALL_RE.findall(text))
-        if calc_count >= _MIN_CALCULATES:
+        if calc_count >= min_calculates:
             items.append(
                 ctx.review(
                     object=f"[{measure.name}]",

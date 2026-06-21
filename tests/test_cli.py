@@ -123,6 +123,18 @@ def test_stale_baseline_entry_warns(tmp_path):
     assert "baseline:" in out and "no longer match" in out
 
 
+def test_rule_threshold_configurable_via_params(tmp_path):
+    # DAX-VAR-RETURN fires on the fixtures; raising its threshold via rules.yml silences it.
+    base = json.loads(CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "json"]).output)
+    assert any(f["rule_id"] == "DAX-VAR-RETURN" for f in base["findings"])
+    cfg = tmp_path / "rules.yml"
+    cfg.write_text("rules:\n  DAX-VAR-RETURN:\n    params:\n      min_functions: 99\n", encoding="utf-8")
+    tuned = json.loads(
+        CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg), "--format", "json"]).output
+    )
+    assert not any(f["rule_id"] == "DAX-VAR-RETURN" for f in tuned["findings"])
+
+
 def test_rules_command_lists_every_rule():
     result = CliRunner().invoke(cli, ["rules", "--format", "json"])
     assert result.exit_code == 0

@@ -11,8 +11,8 @@ stay terse and consistent.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from coop_dax_review.finding import AgentReviewItem, Finding
 from coop_dax_review.model import ModelCatalog
@@ -30,6 +30,7 @@ class Rule:
     tier: int
     kind: str = "deterministic"  # "deterministic" | "agent"
     default_enabled: bool = True  # off-by-default rules must be turned on in rules.yml
+    params: dict[str, Any] = field(default_factory=dict)  # tunables from rules.yml (e.g. thresholds)
     check: Optional[Callable[["RuleContext"], list[Finding]]] = None
     detect: Optional[Callable[["RuleContext"], list[AgentReviewItem]]] = None
 
@@ -45,6 +46,20 @@ class RuleContext:
     @property
     def model(self) -> str:
         return self.catalog.name
+
+    def param(self, name: str, default: Any) -> Any:
+        """A per-rule tunable from rules.yml (the rule's ``params:`` block), or
+        ``default``. Lets thresholds be retuned without a code change."""
+        value = self.rule.params.get(name, default)
+        # Be forgiving about YAML types vs the default's type (e.g. "5" -> 5).
+        if isinstance(default, bool):
+            return bool(value)
+        if isinstance(default, int) and not isinstance(value, bool):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+        return value
 
     def finding(
         self,

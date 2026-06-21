@@ -21,16 +21,17 @@ from coop_dax_review.rules.helpers import count_vars, has_block_comment, masked
 _MIN_VARS = 3
 
 
-def _is_complex(measure_masked: str) -> bool:
-    return count_vars(measure_masked) >= _MIN_VARS
+def _is_complex(measure_masked: str, min_vars: int) -> bool:
+    return count_vars(measure_masked) >= min_vars
 
 
 def check(ctx: RuleContext) -> list[Finding]:
     findings: list[Finding] = []
+    min_vars = ctx.param("min_vars", _MIN_VARS)  # tunable in rules.yml
     for measure in ctx.catalog.measures:
         if has_block_comment(measure.dax):
             continue  # already documented with a /* ... */ header
-        if not _is_complex(masked(measure)):
+        if not _is_complex(masked(measure), min_vars):
             continue  # simple measure — a header is not expected
         findings.append(
             ctx.finding(
@@ -38,7 +39,7 @@ def check(ctx: RuleContext) -> list[Finding]:
                 file=measure.file,
                 line=measure.line,
                 message=(
-                    f"complex measure ({_MIN_VARS}+ VARs) has no /* ... */ header block — "
+                    f"complex measure ({min_vars}+ VARs) has no /* ... */ header block — "
                     "add a header documenting Purpose/Context/Dependencies (§12)."
                 ),
             )

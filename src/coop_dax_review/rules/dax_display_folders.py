@@ -25,9 +25,10 @@ def check(ctx: RuleContext) -> list[Finding]:
         by_table[normalize(measure.table)].append(measure)
     tables = {normalize(t.name): t for t in ctx.catalog.tables}
 
+    min_measures = ctx.param("min_measures", _MIN_MEASURES)  # tunable in rules.yml
     findings: list[Finding] = []
     for table_key, measures in by_table.items():
-        if len(measures) <= _MIN_MEASURES:
+        if len(measures) <= min_measures:
             continue
         if any(m.display_folder.strip() for m in measures):
             continue  # at least one folder in use — author is organizing

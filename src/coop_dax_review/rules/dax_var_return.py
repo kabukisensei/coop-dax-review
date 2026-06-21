@@ -35,11 +35,12 @@ _CALL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*\s*\(")
 
 def check(ctx: RuleContext) -> list[Finding]:
     findings: list[Finding] = []
+    min_functions = ctx.param("min_functions", _MIN_FUNCTIONS)  # tunable in rules.yml
     for measure in ctx.catalog.measures:
         text = masked(measure)
         if has_var_return(text):
             continue
-        if len(_CALL_RE.findall(text)) < _MIN_FUNCTIONS:
+        if len(_CALL_RE.findall(text)) < min_functions:
             continue  # trivial enough to read inline
         findings.append(
             ctx.finding(
