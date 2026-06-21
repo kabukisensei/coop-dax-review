@@ -22,6 +22,8 @@ def test_check_json_contract_shape():
     payload = json.loads(result.output)
     assert payload["tool"] == "coop-dax-review"
     assert set(payload) >= {"findings", "summary", "agent_review", "standards", "diagnostics"}
+    assert payload["schema_version"] == 1
+    assert set(payload["verdict"]) == {"clean", "highest_severity"}
     assert payload["standards"]["sha256"]
     for finding in payload["findings"]:
         assert set(finding) == {
@@ -33,6 +35,7 @@ def test_check_json_contract_shape():
             "object",
             "message",
             "standard_ref",
+            "fingerprint",
         }
 
 
@@ -92,6 +95,32 @@ def test_json_includes_models_checked():
     out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "json"]).output
     payload = json.loads(out)
     assert payload["models_checked"] >= 1
+
+
+def test_build_catalogs_collects_raw_texts():
+    from coop_dax_review.cli import build_catalogs, discover_inputs
+
+    tmdl, bim = discover_inputs((str(FIXTURES),))
+    texts: dict = {}
+    build_catalogs(tmdl, bim, texts_out=texts)
+    assert texts  # raw text captured so inline directives can be scanned
+    assert any(k.endswith(".tmdl") or k.endswith(".bim") for k in texts)
+
+
+def test_baseline_write_then_suppresses(tmp_path):
+    bl = tmp_path / "bl.json"
+    written = CliRunner().invoke(cli, ["check", str(FIXTURES), "--write-baseline", str(bl)])
+    assert written.exit_code == 0 and bl.exists()
+    # re-check against the baseline -> every known finding is suppressed
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--baseline", str(bl)]).output
+    assert "no issues found" in out  # all findings suppressed (agent-review items still pass through)
+
+
+def test_stale_baseline_entry_warns(tmp_path):
+    bl = tmp_path / "bl.json"
+    bl.write_text('{"tool":"coop-dax-review","fingerprints":["deadbeef0000"]}\n', encoding="utf-8")
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--baseline", str(bl)]).output
+    assert "baseline:" in out and "no longer match" in out
 
 
 def test_rules_command_lists_every_rule():

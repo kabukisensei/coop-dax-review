@@ -51,7 +51,8 @@ See `RULES.md` for the taxonomy.
 ```
 coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
                       [--format text|json|markdown|html] [-o FILE] [--open/--no-open]
-                      [--color/--no-color] [--min-severity ...] [--log-file <path>] [--strict]
+                      [--color/--no-color] [--baseline <path>] [--write-baseline <path>]
+                      [--min-severity ...] [--log-file <path>] [--strict]
 coop-dax-review rules
 coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
@@ -71,11 +72,14 @@ coop-dax-review --version
 ## Agent integration contract (identical shape to coop-sql-review)
 ```json
 {
-  "tool": "coop-dax-review", "version": "x.y.z",
+  "tool": "coop-dax-review", "schema_version": 1, "version": "x.y.z",
   "standards": {"path": "...", "sha256": "..."},
+  "models_checked": 2,
+  "verdict": {"clean": false, "highest_severity": "warning"},
   "findings": [
-    {"rule_id":"DAX-NO-NESTED-CALCULATE","severity":"warning","model":"Sales Analytics",
-     "object":"[Sales: Revenue YTD]","message":"nested CALCULATE — break into VARs","standard_ref":"§3"}
+    {"rule_id":"DAX-NO-NESTED-CALCULATE","severity":"warning","model":"Sales Analytics","file":"...","line":13,
+     "object":"[Sales: Revenue YTD]","message":"nested CALCULATE — break into VARs","standard_ref":"§3",
+     "fingerprint":"4ad6aeb79867"}
   ],
   "summary": {"error":0,"warning":2,"info":4},
   "agent_review": [{"rule_id":"DAX-KEEPFILTERS-NEEDED","object":"[...]","note":"judge whether KEEPFILTERS is required per §5"}]

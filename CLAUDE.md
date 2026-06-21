@@ -115,11 +115,18 @@ there (`text` / `catalog` / `model` / `agent`) tells you what context each rule 
 ```
 coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
                       [--format text|json|markdown|html] [-o FILE] [--open/--no-open]
-                      [--color/--no-color] [--min-severity ...] [--log-file <path>] [--strict]
+                      [--color/--no-color] [--baseline <path>] [--write-baseline <path>]
+                      [--min-severity ...] [--log-file <path>] [--strict]
 coop-dax-review rules
 coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
 ```
+
+- **Suppressions** (`suppressions.py`): inline `coop-dax-review:ignore <RULE>` comments (on the
+  finding's line or the line above; bare/`*` = all) and a fingerprint **baseline** (`--write-baseline`
+  / `--baseline`) for ratcheting on legacy models. Findings carry a stable, line-independent
+  `Finding.fingerprint()`; the JSON adds `schema_version`, a `verdict`, `models_checked`, and a
+  `fingerprint` per finding/agent-review item.
 
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.

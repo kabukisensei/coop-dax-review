@@ -28,6 +28,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```sh
 coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html] [-o FILE]
                       [--open/--no-open] [--color/--no-color] [--log-file FILE]
+                      [--baseline FILE] [--write-baseline FILE]
                       [--min-severity error|warning|info] [--strict]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
 coop-dax-review upgrade               # show the command to update (never self-applies; alias: update)
@@ -105,19 +106,43 @@ See `RULES.md` for the full taxonomy. `docs/standards.md` §14–§20 are adopte
 best practices (DIVIDE, format strings, key column types, hidden FKs, key summarizeBy, display
 folders, explicit measures); `docs/standards-proposed-additions.md` is the original candidate list.
 
+## Suppressing findings (adopting on an existing model)
+
+Two deterministic, never-blocking ways to silence findings you've already triaged:
+
+- **Inline** — drop a comment on a finding's line (or the line directly above it):
+  ```
+  // coop-dax-review:ignore DAX-VAR-RETURN reason: legacy measure, rewrite scheduled
+  ```
+  List several rule ids (`ignore DAX-A, DAX-B`), or use a bare `ignore` / `*` to silence every
+  rule on that line. The `reason:` text is for humans; it's ignored by the parser.
+- **Baseline (ratchet)** — record today's findings and surface only *new* ones going forward:
+  ```sh
+  coop-dax-review check . --write-baseline dax-baseline.json   # once, to capture the status quo
+  coop-dax-review check . --baseline dax-baseline.json         # thereafter: only new findings appear
+  ```
+  Each finding has a stable, line-independent `fingerprint` (in the JSON), and the baseline is a
+  sorted list of those. A baseline entry that no longer matches any finding (you fixed it) is
+  reported as a diagnostic so the file self-cleans (`--write-baseline` to prune).
+
 ## Agent JSON contract
 
 ```json
 {
-  "tool": "coop-dax-review", "version": "x.y.z",
+  "tool": "coop-dax-review", "schema_version": 1, "version": "x.y.z",
   "standards": {"path": "...", "sha256": "..."},
+  "models_checked": 2,
+  "verdict": {"clean": false, "highest_severity": "warning"},
   "findings": [{"rule_id":"...","severity":"warning","model":"Sales","file":"...","line":12,
-                "object":"[Sales: Revenue YTD]","message":"...","standard_ref":"§3"}],
+                "object":"[Sales: Revenue YTD]","message":"...","standard_ref":"§3","fingerprint":"4ad6aeb79867"}],
   "summary": {"error":0,"warning":2,"info":4},
-  "agent_review": [{"rule_id":"...","model":"Sales","file":"...","line":40,"object":"[...]","note":"...","standard_ref":"§5"}],
+  "agent_review": [{"rule_id":"...","model":"Sales","file":"...","line":40,"object":"[...]","note":"...","standard_ref":"§5","fingerprint":"..."}],
   "diagnostics": [{"severity":"warning","category":"parse_failed","file":"...","message":"..."}]
 }
 ```
+
+`schema_version` lets a consumer pin the shape; `verdict`/`models_checked` give a quick machine
+verdict + coverage signal; each finding's `fingerprint` is a stable id for tracking across runs.
 
 ## Project docs
 
