@@ -36,3 +36,20 @@ def test_mask_handles_backslash_terminated_string():
 def test_mask_handles_doubled_quote_escape():
     masked = mask_dax('IF(x = "he said ""hi""", [A], [B])')
     assert [r.name for r in bracket_refs(masked)] == ["A", "B"]
+
+
+def test_comment_markers_inside_strings_do_not_blank_later_refs():
+    # A `//`/`--`/`/*` inside a string literal (e.g. a URL) must not be treated
+    # as a comment and blank out the real refs after it.
+    masked = mask_dax('IF([Flag], "http://example.com", [Sales: Total])')
+    assert [r.name for r in bracket_refs(masked)] == ["Flag", "Sales: Total"]
+
+    masked = mask_dax('IF([Flag], "x -- y", [Sales: Total])')
+    assert [r.name for r in bracket_refs(masked)] == ["Flag", "Sales: Total"]
+
+
+def test_block_comment_delimiters_inside_strings_do_not_straddle():
+    # `/*` and `*/` that live inside separate string literals must not be paired
+    # into one giant block comment that swallows the ref between them.
+    masked = mask_dax('"a /* b" & [c] & "d */ e"')
+    assert [r.name for r in bracket_refs(masked)] == ["c"]

@@ -17,13 +17,20 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
-_LINE_COMMENT_RE = re.compile(r"(?://|--)[^\n]*")
+# A single combined scanner: a string literal, a block comment, or a line
+# comment — whichever starts first wins. Masking must be one left-to-right
+# pass: if comments were stripped before strings, a `//`/`--`/`/*` *inside* a
+# string literal (think image/SVG URLs, e.g. "http://...") would be treated as
+# a real comment and blank out the rest of the line — silently hiding real
+# refs after it. Putting the string alternative first guarantees a quoted run
+# is consumed as a unit before any comment marker inside it can match (and vice
+# versa for a `"` inside a block comment).
+#
 # DAX has no backslash escapes (backslash is a literal char); a double-quote
 # inside a string is escaped by doubling it (""). Matching with a C-style
 # `\\.` escape would mis-handle a string ending in a backslash (e.g. "C:\")
 # and leave its contents — and everything after — unmasked.
-_STRING_RE = re.compile(r'"(?:[^"]|"")*"')
+_MASK_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/|(?://|--)[^\n]*', re.S)
 _BRACKET_RE = re.compile(r"\[([^\[\]]+)\]")
 # Table[Column]: a quoted 'Table Name'[Col] or a bare TableName[Col].
 _QUOTED_TABLE_RE = re.compile(r"'([^']+)'\s*\[([^\[\]]+)\]")
@@ -43,10 +50,7 @@ def _blank_runs(text: str, pattern: re.Pattern) -> str:
 def mask_dax(dax: str) -> str:
     """A copy of ``dax`` with comment and string-literal *content* blanked to
     spaces but every offset and newline preserved. Scan this, not the raw DAX."""
-    text = _blank_runs(dax, _BLOCK_COMMENT_RE)
-    text = _blank_runs(text, _LINE_COMMENT_RE)
-    text = _blank_runs(text, _STRING_RE)
-    return text
+    return _blank_runs(dax, _MASK_RE)
 
 
 @dataclass(frozen=True)
