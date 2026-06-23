@@ -5,6 +5,14 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [0.6.2] — 2026-06-23
+### Fixed
+- **`mask_dax`**: replaced three-pass comment/string stripping with a single combined
+  left-to-right scanner. A `//`/`--`/`/*` inside a string literal (e.g. an image/SVG URL
+  `"http://example.com"`) was previously treated as a real comment, blanking out the rest
+  of the line and silently hiding real measure/column references from every text-based rule.
+  Strings are now consumed as units before any comment marker inside them can match.
+
 ## [0.6.1] — 2026-06-21
 ### Changed
 - **Internal de-duplication**: the tool-agnostic infrastructure (progress, diagnostics, the
