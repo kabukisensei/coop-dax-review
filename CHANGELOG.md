@@ -5,7 +5,7 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
-## [Unreleased]
+## [0.6.3] — 2026-06-25
 ### Fixed
 - **Bracket-ref qualifier matching spanned newlines** — `_QUOTED_TABLE_RE`/`_BARE_TABLE_RE` used
   `\s*` between a table identifier and its `[column]`, so `Sales\n[Total]` was wrongly read as the
