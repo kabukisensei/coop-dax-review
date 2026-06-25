@@ -61,8 +61,9 @@ coop-dax-review --version
   `check` with no paths in a terminal and a checkbox picker chooses which subfolders to scan.
 - Default exit **0** (advisory); `--strict` exits 2 when any reported finding remains (after the
   `--min-severity` filter).
-- `--standards` defaults to bundled `docs/standards.md`; can point at a canonical company
-  standards file. `--log-file` writes a diagnostics log.
+- `--standards` defaults to the bundled `data/standards.md` (kept byte-identical to the authored
+  `docs/standards.md`); can point at a canonical company standards file. `--log-file` writes a
+  diagnostics log.
 - The default text report is a sectioned terminal report (banner, one section per model with
   `ERROR`/`WARN`/`INFO` badges, a `SUMMARY` panel); colorized at an interactive terminal and plain
   ASCII when piped / redirected / `--no-color` / `NO_COLOR`.

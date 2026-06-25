@@ -1,5 +1,8 @@
 """TMDL parsing into a catalog: measure boundaries, line numbers, model metadata."""
 
+import json
+
+from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.tmdl import model_root, parse_tmdl_model
 
 TABLE_TMDL = """table FactSales
@@ -65,6 +68,31 @@ def test_date_table_detected_via_data_category():
     tmdl = "table DimDate\n\tcolumn Date\n\t\tdataType: dateTime\n\t\tdataCategory: Time\n"
     cat = parse_tmdl_model("M", {"d.tmdl": tmdl})
     assert cat.date_table == "DimDate"
+
+
+def test_bim_crossfilter_is_case_insensitive():
+    # .bim must match the TMDL parser's case-insensitive compare:
+    # any casing of "bothDirections" is "both".
+    bim = json.dumps(
+        {
+            "name": "M",
+            "model": {
+                "tables": [{"name": "FactSales", "columns": [{"name": "ProductId"}]}],
+                "relationships": [
+                    {
+                        "fromTable": "FactSales",
+                        "fromColumn": "ProductId",
+                        "toTable": "DimProduct",
+                        "toColumn": "ProductId",
+                        "crossFilteringBehavior": "BothDirections",
+                    }
+                ],
+            },
+        }
+    )
+    cat = parse_bim_model("model.bim", bim)
+    assert len(cat.relationships) == 1
+    assert cat.relationships[0].cross_filter == "both"
 
 
 def test_model_root_resolves_semantic_model_name():

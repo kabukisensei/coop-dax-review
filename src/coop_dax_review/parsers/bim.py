@@ -104,7 +104,9 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
                 from_column=rel.get("fromColumn", ""),
                 to_table=rel["toTable"],
                 to_column=rel.get("toColumn", ""),
-                cross_filter="both" if rel.get("crossFilteringBehavior") == "bothDirections" else "single",
+                cross_filter="both"
+                if str(rel.get("crossFilteringBehavior") or "").lower() == "bothdirections"
+                else "single",
                 is_active=rel.get("isActive", True),
                 file=file,
             )

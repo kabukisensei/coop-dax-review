@@ -54,9 +54,12 @@ The repo's `.github/workflows/publish.yml` already requests the right permission
 
 A release is triggered by pushing a **version tag** that starts with `v`.
 
-1. **Bump the version in BOTH places** (they must match) — the #1 release mistake to avoid:
-   - `pyproject.toml` → `version = "0.1.1"`
+1. **Bump the version in one place** — the version is single-sourced:
    - `src/coop_dax_review/__init__.py` → `__version__ = "0.1.1"`
+
+   `pyproject.toml` derives the version from this via hatchling dynamic versioning
+   (`dynamic = ["version"]` + `[tool.hatch.version]`), so do **not** add a `version =` line to
+   `pyproject.toml` — it breaks the build.
 
    Use [semver](https://semver.org): last number for fixes, middle for features, first for breaking.
 2. **Commit and tag:**
@@ -95,6 +98,6 @@ $ python -m build && twine check dist/*    # optional: validate the artifacts + 
 |---|---|
 | First push to GitHub | `gh repo create kabukisensei/coop-dax-review --source=. --remote=origin --push` |
 | Build + validate locally | `python -m build && twine check dist/*` |
-| Cut release `vX.Y.Z` | bump version in 2 files → commit → `git tag vX.Y.Z && git push origin vX.Y.Z` |
+| Cut release `vX.Y.Z` | bump version in `src/coop_dax_review/__init__.py` → commit → `git tag vX.Y.Z && git push origin vX.Y.Z` |
 | What published | https://pypi.org/project/coop-dax-review/ |
 | First-run setup | PyPI 2FA + pending publisher + GitHub `pypi` environment (Part B, once) |

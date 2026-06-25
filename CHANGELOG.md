@@ -5,6 +5,22 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [Unreleased]
+### Fixed
+- **Bracket-ref qualifier matching spanned newlines** — `_QUOTED_TABLE_RE`/`_BARE_TABLE_RE` used
+  `\s*` between a table identifier and its `[column]`, so `Sales\n[Total]` was wrongly read as the
+  qualified column `Sales[Total]` (a false negative for the §1/§9 prefixing rules). Tightened to
+  `[ \t]*` so a qualifier must sit on the same line as its bracket (as DAX requires).
+- **`.bim` cross-filter compare was case-sensitive** — `crossFilteringBehavior == "bothDirections"`
+  now matches case-insensitively (`.lower() == "bothdirections"`), so a `.bim` model classifies
+  bidirectional relationships identically to the TMDL parser (DAX-BIDI-RELATIONSHIP fires on both).
+### Docs
+- `dax_simple_functions` docstring corrected to "three or more times" (matches `_MIN_CALCULATES = 3`).
+- `PUBLISHING.md`/`CLAUDE.md` no longer say to bump `version` in `pyproject.toml` — the version is
+  single-sourced from `src/coop_dax_review/__init__.py` (hatchling dynamic version).
+- `SPEC.md`/`CLAUDE.md` corrected the bundled default to `data/standards.md` (kept byte-identical to
+  the authored `docs/standards.md`).
+
 ## [0.6.2] — 2026-06-23
 ### Fixed
 - **`mask_dax`**: replaced three-pass comment/string stripping with a single combined

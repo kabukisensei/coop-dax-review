@@ -6,7 +6,7 @@ given measure's use of ``CALCULATE`` (or other heavy machinery) is *justified* i
 stylistic call the linter cannot make, so this is an agent-judgment rule.
 
 To stay PRECISE and avoid flooding, we detect a single, unambiguous over-use signal:
-a measure that calls ``CALCULATE`` / ``CALCULATETABLE`` two or more times (counted on
+a measure that calls ``CALCULATE`` / ``CALCULATETABLE`` three or more times (counted on
 the comment/string-masked DAX so keywords inside comments or strings never count).
 A trivial measure — a single ``SUM``, or a single justified ``CALCULATE`` — never fires.
 We emit at most ONE item per measure and hand it to the agent to judge whether simpler

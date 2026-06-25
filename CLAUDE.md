@@ -50,8 +50,9 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"   # one-time dev setup
 .venv/bin/coop-dax-review rules                              # list every rule
 ```
 
-Release = bump `version` in **both** `pyproject.toml` and `src/coop_dax_review/__init__.py`, then
-tag `vX.Y.Z` (publish.yml does the rest via PyPI trusted publishing).
+Release = bump `__version__` in `src/coop_dax_review/__init__.py` (the single source; `pyproject.toml`
+derives it via hatchling dynamic versioning), then tag `vX.Y.Z` (publish.yml does the rest via PyPI
+trusted publishing).
 
 ## Adding a rule
 
@@ -139,7 +140,8 @@ coop-dax-review --version
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.
 - Default exit **0** (advisory). `--strict` is the opt-in gate that can return non-zero.
-- `--standards` defaults to bundled `docs/standards.md`; `--log-file` writes a diagnostics log.
+- `--standards` defaults to the bundled `data/standards.md` (kept byte-identical to the authored
+  `docs/standards.md`); `--log-file` writes a diagnostics log.
 - The default `--format text` is a **sectioned report** (banner, one section per model with
   `ERROR`/`WARN`/`INFO` badges, a `SUMMARY` panel). Color is automatic at an interactive terminal
   and plain ASCII when piped / redirected / `--no-color` / `NO_COLOR`; `--color`/`--no-color`

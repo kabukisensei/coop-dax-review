@@ -20,6 +20,27 @@ def test_bracket_refs_distinguishes_qualified_from_bare():
     assert by_name["Date"].table == "Dim Date"  # quoted-table column
 
 
+def test_bracket_refs_qualifier_must_be_on_same_line():
+    # A qualifier on a *prior* line must not bind to the bracket: DAX requires the
+    # table name on the same line as its '['. So `RETURN\n[Total]` is a bare ref.
+    refs = bracket_refs(mask_dax("RETURN\n[Total]"))
+    assert len(refs) == 1
+    assert refs[0].name == "Total"
+    assert refs[0].table == ""  # bare, not qualified across the newline
+
+    # Same-line qualified forms still resolve (including a space before the '[').
+    for dax, name, table in [
+        ("FactSales[Revenue]", "Revenue", "FactSales"),
+        ("'Dim Date'[Date]", "Date", "Dim Date"),
+        ("'Dim Date' [Date]", "Date", "Dim Date"),
+        ("Sales [Qty]", "Qty", "Sales"),
+    ]:
+        refs = bracket_refs(mask_dax(dax))
+        assert len(refs) == 1, dax
+        assert refs[0].name == name
+        assert refs[0].table == table
+
+
 def test_bracket_refs_ignores_brackets_inside_strings():
     refs = bracket_refs(mask_dax('IF(x, "[NotARef]", [Real])'))
     assert [r.name for r in refs] == ["Real"]

@@ -33,8 +33,8 @@ from dataclasses import dataclass
 _MASK_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/|(?://|--)[^\n]*', re.S)
 _BRACKET_RE = re.compile(r"\[([^\[\]]+)\]")
 # Table[Column]: a quoted 'Table Name'[Col] or a bare TableName[Col].
-_QUOTED_TABLE_RE = re.compile(r"'([^']+)'\s*\[([^\[\]]+)\]")
-_BARE_TABLE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\[([^\[\]]+)\]")
+_QUOTED_TABLE_RE = re.compile(r"'([^']+)'[ \t]*\[([^\[\]]+)\]")
+_BARE_TABLE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)[ \t]*\[([^\[\]]+)\]")
 
 
 def _blank_runs(text: str, pattern: re.Pattern) -> str:
