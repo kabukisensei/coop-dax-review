@@ -69,6 +69,15 @@ def test_var_keyword_in_string_not_counted(make_catalog):
     assert _run(cat) == []
 
 
+def test_block_comment_inside_string_does_not_count_as_header(make_catalog):
+    # A `/* ... */` substring that lives inside a string literal is NOT a
+    # documentation header, so a complex measure with such a string must still
+    # fire (regression: it was wrongly treated as already-documented).
+    dax = 'VAR a = 1\nVAR b = 2\nVAR c = 3\nRETURN "label /* not a header */ end"'
+    cat = make_catalog(measures=[("Sales: Labeled", dax)])
+    assert len(_run(cat)) == 1
+
+
 def test_points_at_declaration_line(make_catalog):
     from coop_dax_review.model import Measure, ModelCatalog
 

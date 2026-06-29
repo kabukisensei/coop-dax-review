@@ -89,6 +89,25 @@ _VAR_RE = re.compile(r"\bVAR\b", re.IGNORECASE)
 _RETURN_RE = re.compile(r"\bRETURN\b", re.IGNORECASE)
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 _BRACKET_CONTENT_RE = re.compile(r"\[[^\[\]]*\]")
+# A string literal or a block comment, whichever starts first (single
+# left-to-right pass, mirroring dax._MASK_RE) — used to blank ONLY string
+# literals while leaving real comments intact, so a ``/* ... */`` substring that
+# lives inside a quoted string is not mistaken for a documentation header.
+_STRING_OR_BLOCK_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/', re.S)
+
+
+def _blank_string_literals(dax: str) -> str:
+    """``dax`` with string-literal *content* blanked (length-preserving) but
+    ``/* ... */`` block comments kept. A block comment encountered first is left
+    untouched so a ``"`` inside it cannot start a phantom string run."""
+
+    def repl(match: re.Match) -> str:
+        run = match.group(0)
+        if run.startswith("/*"):
+            return run  # keep real block comments
+        return "".join("\n" if ch == "\n" else " " for ch in run)
+
+    return _STRING_OR_BLOCK_RE.sub(repl, dax)
 
 
 def blank_brackets(text: str) -> str:
@@ -144,8 +163,13 @@ def has_var_return(masked_dax: str) -> bool:
 
 
 def has_block_comment(dax: str) -> bool:
-    """True if the (raw, unmasked) DAX contains a ``/* ... */`` header block."""
-    return bool(_BLOCK_COMMENT_RE.search(dax))
+    """True if the DAX contains a ``/* ... */`` header block.
+
+    String-literal content is blanked first (comments kept) so a ``/* ... */``
+    substring living inside a quoted string is not mistaken for a real header.
+    Run on the raw DAX (not ``mask_dax`` output, which would blank a real
+    header along with the strings)."""
+    return bool(_BLOCK_COMMENT_RE.search(_blank_string_literals(dax)))
 
 
 def snowflake_intermediates(catalog: ModelCatalog) -> list[str]:

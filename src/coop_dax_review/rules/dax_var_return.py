@@ -21,7 +21,7 @@ import re
 
 from coop_dax_review.finding import Finding
 from coop_dax_review.rules.base import Rule, RuleContext
-from coop_dax_review.rules.helpers import has_var_return, masked
+from coop_dax_review.rules.helpers import blank_brackets, has_var_return, masked
 
 # A measure with this many (or more) function calls and no VAR/RETURN is
 # considered non-trivial. Kept conservative so simple one-liners don't fire.
@@ -40,7 +40,9 @@ def check(ctx: RuleContext) -> list[Finding]:
         text = masked(measure)
         if has_var_return(text):
             continue
-        if len(_CALL_RE.findall(text)) < min_functions:
+        # Blank bracket contents so a paren inside a column/measure name (e.g.
+        # ``[Amount (USD)]``) is not miscounted as a phantom function call.
+        if len(_CALL_RE.findall(blank_brackets(text))) < min_functions:
             continue  # trivial enough to read inline
         findings.append(
             ctx.finding(

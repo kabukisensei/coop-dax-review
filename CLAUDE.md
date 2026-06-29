@@ -5,10 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: M0–M5 done + published to PyPI — 24 rules (M6 agent-wiring remaining)
 
 Scaffold, model catalog, TMDL/.bim parsers, rule engine, text/JSON renderers, standards-driven
-config, the full Tier-1/2/3 + agent rule set from `RULES.md` (17 rules), AND the M5 best-practice
-rules adopted from `docs/standards-proposed-additions.md` (§14–§20: DIVIDE, format strings, key
-column types, hidden FKs, key summarizeBy, display folders, explicit measures) are implemented and
-tested (`coop-dax-review rules` lists all 24). The foundation was adversarially reviewed (20
+config, the full rule set documented in `RULES.md` (all 24 rules: the original Tier-1/2/3 + agent
+set plus the M5 best-practice rules §14–§20 adopted from `docs/standards-proposed-additions.md`:
+DIVIDE, format strings, key column types, hidden FKs, key summarizeBy, display folders, explicit
+measures) are implemented and tested (`coop-dax-review rules` lists all 24). The foundation was adversarially reviewed (20
 confirmed issues fixed) and every rule has a fires + a compliant case; precision issues found by
 per-rule verifiers are fixed and pinned in `tests/test_regressions.py` / `tests/test_m5*.py`.
 The UX surface was then brought to parity with `coop-sql-review`: `check` gained `--format
@@ -111,7 +111,7 @@ TMDL/.bim model → parse → catalog {tables, columns, measures(+DAX), relation
   ref `[X]` without knowing which names are measures vs columns.
 - **Rule** = `{id, title, severity, category, standard_ref, check(catalog|measure) -> [Finding]}`.
   Rule check functions must be **pure and deterministic** (LF, sorted output).
-- **standards.md drives config** (which rules on + params) via `rules.yml` / front-matter — editable
+- **standards.md drives config** (which rules on + params) via `rules.yml` — editable
   without a rebuild.
 - **Judgment rules are never silently dropped** — they go into the `agent_review` list of the JSON
   output so the agent can apply semantic judgment.

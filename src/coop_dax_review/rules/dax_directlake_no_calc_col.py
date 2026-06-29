@@ -22,7 +22,11 @@ def check(ctx: RuleContext) -> list[Finding]:
     model_is_dl = ctx.catalog.storage_mode.lower() == "directlake"
     findings: list[Finding] = []
     for table in ctx.catalog.tables:
-        if not (table.storage_mode.lower() == "directlake" or model_is_dl):
+        table_dl = table.storage_mode.lower() == "directlake"
+        # The model-level fallback only covers a table with a blank/unknown mode;
+        # an explicit import/dual/directQuery table in a composite model fully
+        # supports calculated columns, so it must not be flagged.
+        if not (table_dl or (not table.storage_mode and model_is_dl)):
             continue
         for column in table.columns:
             if not column.is_calculated:

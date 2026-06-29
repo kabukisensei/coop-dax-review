@@ -54,6 +54,30 @@ def test_fires_when_model_is_directlake_even_if_table_mode_blank():
     assert findings[0].line == 7
 
 
+def test_composite_explicit_import_table_not_flagged():
+    # Composite model: one Direct Lake table plus an explicit import-mode table
+    # carrying a calculated column. Calculated columns are supported on the
+    # non-DL table, so it must NOT fire (only blank/unknown modes inherit the
+    # model-level DL fallback).
+    dl = Table(name="FactSales", storage_mode="directLake", columns=[Column(name="Revenue")])
+    imp = Table(
+        name="DimImport",
+        storage_mode="import",
+        columns=[Column(name="CalcCol", line=5, is_calculated=True)],
+    )
+    assert _run(_cat(dl, imp)) == []
+
+
+def test_composite_explicit_dual_table_not_flagged():
+    dl = Table(name="FactSales", storage_mode="directLake", columns=[Column(name="Revenue")])
+    dual = Table(
+        name="DimDual",
+        storage_mode="dual",
+        columns=[Column(name="CalcCol", line=5, is_calculated=True)],
+    )
+    assert _run(_cat(dl, dual)) == []
+
+
 def test_multiple_calc_columns_one_finding_each():
     table = Table(
         name="FactSales",

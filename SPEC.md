@@ -41,7 +41,7 @@ TMDL/.bim model → parse → catalog {tables, columns, measures(+DAX), relation
               rule engine (measure-text rules + model-level rules) → Findings → render (text · JSON · markdown · HTML)
 ```
 - **Rule** = `{id, title, severity, category, standard_ref, check(catalog|measure) -> [Finding]}`.
-- **standards.md drives config** (which rules on + params) via `rules.yml` / front-matter — edit
+- **standards.md drives config** (which rules on + params) via `rules.yml` — edit
   anytime, no rebuild.
 - **Judgment rules** → `agent_review` list (never silently dropped).
 

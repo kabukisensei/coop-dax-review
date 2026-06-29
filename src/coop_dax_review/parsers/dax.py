@@ -36,6 +36,37 @@ _BRACKET_RE = re.compile(r"\[([^\[\]]+)\]")
 _QUOTED_TABLE_RE = re.compile(r"'([^']+)'[ \t]*\[([^\[\]]+)\]")
 _BARE_TABLE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)[ \t]*\[([^\[\]]+)\]")
 
+# DAX keywords/operators that can legally sit immediately before a `[` (e.g.
+# ``RETURN [Measure]``, ``x IN [Region]``, ``NOT [Flag]``). A real table name is
+# never one of these, so a bare-table match whose identifier is one of these
+# keywords is a keyword-then-bracket-ref, not a ``Table[Column]`` qualifier.
+_DAX_KEYWORDS = frozenset(
+    {
+        "var",
+        "return",
+        "in",
+        "not",
+        "and",
+        "or",
+        "if",
+        "then",
+        "else",
+        "true",
+        "false",
+        "evaluate",
+        "define",
+        "measure",
+        "column",
+        "table",
+        "order",
+        "by",
+        "start",
+        "at",
+        "asc",
+        "desc",
+    }
+)
+
 
 def _blank_runs(text: str, pattern: re.Pattern) -> str:
     """Replace each match with same-length whitespace, preserving newlines so
@@ -80,8 +111,14 @@ def bracket_refs(masked: str) -> list[BracketRef]:
     qualified: dict[int, str] = {}
     for pat in (_QUOTED_TABLE_RE, _BARE_TABLE_RE):
         for match in pat.finditer(masked):
+            table = match.group(1).strip()
+            # A DAX keyword (RETURN/VAR/IN/NOT/...) immediately before a `[` is
+            # an operator preceding a bracket ref, not a `Table[Column]`
+            # qualifier — a real table name is never a reserved keyword.
+            if pat is _BARE_TABLE_RE and table.lower() in _DAX_KEYWORDS:
+                continue
             open_idx = masked.index("[", match.start())
-            qualified.setdefault(open_idx, match.group(1).strip())
+            qualified.setdefault(open_idx, table)
 
     refs: list[BracketRef] = []
     for match in _BRACKET_RE.finditer(masked):

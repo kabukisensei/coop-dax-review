@@ -5,6 +5,31 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [0.6.4] — 2026-06-29
+### Fixed
+- **Keyword before a bracket ref mis-recorded as the qualifying table** — `bracket_refs` read a DAX
+  keyword sitting immediately before a `[...]` (e.g. `RETURN [Measure]`, `x IN [Region]`,
+  `NOT [Flag]`) as a `Table[Column]` qualifier, producing a §1 false positive in
+  DAX-MEASURE-NOT-PREFIXED and §9 false negatives in DAX-MEASURE-IN-ITERATOR /
+  DAX-CONTEXT-TRANSITION. Reserved keywords are now excluded from bare-table matching (a real table
+  named with a keyword must be quoted, which still resolves).
+- **Parentheses inside column/measure names broke the CALCULATE-depth scan** — DAX-NO-NESTED-CALCULATE
+  now blanks bracket-reference contents (length-preserving) before counting parens, so a name like
+  `[Net (USD)]` no longer causes a missed nested CALCULATE (FN) or a wrongly-flagged sibling (FP).
+- **DAX-DIRECTLAKE-NO-CALC-COL false-positived on composite models** — an explicit import/dual table
+  in a mixed-storage model is no longer flagged; the model-level Direct Lake fallback now applies
+  only to tables whose own storage mode is blank/unknown.
+- **DAX-VAR-RETURN counted a paren inside a bracket name as a function call** — call counting now runs
+  over blanked brackets, so `[Amount (USD)]` is not a phantom call.
+- **DAX-COMPLEX-NO-HEADER missed headers hidden by string literals** — a `/* */` substring inside a
+  quoted string no longer counts as a doc header (string literals are blanked first).
+- **DAX-MEASURE-IN-ITERATOR named the wrong iterator** — nested-iterator messages now name the
+  immediately-enclosing iterator (tightest span) instead of the outermost.
+### Docs
+- Added the missing CHANGELOG reference-link definitions for 0.6.1/0.6.2/0.6.3; dropped the
+  non-existent "front-matter" config claim from CLAUDE.md/SPEC.md (config is rules.yml only); fixed
+  CLAUDE.md's stale "17 rules" to the actual 24.
+
 ## [0.6.3] — 2026-06-25
 ### Fixed
 - **Bracket-ref qualifier matching spanned newlines** — `_QUOTED_TABLE_RE`/`_BARE_TABLE_RE` used
@@ -82,6 +107,10 @@ field and are called out here.
 - Initial release: 24 DAX/model-standard rules over TMDL/`.bim` Power BI semantic models, a human
   report, and the machine JSON contract for the company analytics agent. Offline, advisory, never blocks.
 
+[0.6.4]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.4
+[0.6.3]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.3
+[0.6.2]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.2
+[0.6.1]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.0
 [0.5.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.5.0
 [0.4.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.4.0

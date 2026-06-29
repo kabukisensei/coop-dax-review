@@ -31,6 +31,20 @@ def test_calculate_inside_string_is_ignored(make_catalog):
     assert _run("coop_dax_review.rules.dax_no_nested_calculate", cat) == []
 
 
+def test_paren_in_name_does_not_hide_nested_calculate(make_catalog):
+    # A ')' inside a column/measure name must not pop the outer CALCULATE off the
+    # depth stack early — the genuinely nested CALCULATE must still fire.
+    cat = make_catalog(measures=[("M", "CALCULATE( [Net) Sales], CALCULATE([Other]) )")])
+    assert len(_run("coop_dax_review.rules.dax_no_nested_calculate", cat)) == 1
+
+
+def test_paren_in_name_does_not_flag_sibling_calculate(make_catalog):
+    # A '(' inside a name must not inflate depth and flag an independent sibling
+    # CALCULATE as nested.
+    cat = make_catalog(measures=[("M", "CALCULATE( [Net( Sales] ) + CALCULATE( [Other] )")])
+    assert _run("coop_dax_review.rules.dax_no_nested_calculate", cat) == []
+
+
 # -- DAX-MEASURE-CATEGORY ---------------------------------------------------
 
 
@@ -59,6 +73,17 @@ def test_measure_prefixed_fires(make_catalog):
 
 def test_qualified_column_does_not_fire(make_catalog):
     cat = make_catalog(measures=[("Sales: B", "FactSales[Revenue]")], tables=[("FactSales", ["Revenue"])])
+    assert _run("coop_dax_review.rules.dax_measure_not_prefixed", cat) == []
+
+
+def test_return_before_measure_ref_is_not_table_prefixed(make_catalog):
+    # `RETURN [Sales: A]` is a bare measure ref, NOT a `RETURN[...]` table prefix,
+    # so the not-prefixed rule must stay silent (regression for the keyword-before-
+    # bracket mis-parse).
+    cat = make_catalog(
+        measures=[("Sales: A", "1"), ("Sales: B", "VAR x = 1\nRETURN [Sales: A]")],
+        tables=[("FactSales", ["Revenue"])],
+    )
     assert _run("coop_dax_review.rules.dax_measure_not_prefixed", cat) == []
 
 

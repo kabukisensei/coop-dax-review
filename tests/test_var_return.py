@@ -75,3 +75,11 @@ def test_non_trivial_without_var_fires(make_catalog):
     # Three distinct calls, no VAR/RETURN.
     cat = make_catalog(measures=[("Sales: Mix", "DIVIDE(SUM(t[a]), COUNT(t[b]))")])
     assert len(_run(cat)) == 1
+
+
+def test_paren_in_column_name_not_counted_as_call(make_catalog):
+    # A '(' inside a column name like [Amount (USD)] must not be miscounted as a
+    # phantom function call: this is a trivial two-call measure and must stay
+    # silent (regression — it was counted as 3 calls and fired).
+    cat = make_catalog(measures=[("Sales: Total", "CALCULATE(SUM(Sales[Amount (USD)]))")])
+    assert _run(cat) == []

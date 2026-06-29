@@ -41,6 +41,20 @@ def test_bracket_refs_qualifier_must_be_on_same_line():
         assert refs[0].table == table
 
 
+def test_bracket_refs_keyword_before_bracket_is_not_a_table():
+    # A DAX keyword immediately before a '[' is an operator preceding a bracket
+    # ref, not a `Table[Column]` qualifier — so `RETURN [M]`, `x IN [R]`, and
+    # `NOT [F]` must all yield a BARE ref (table == ""), not table RETURN/IN/NOT.
+    for dax, name in [
+        ("VAR _t = 1 RETURN [Measure]", "Measure"),
+        ("x IN [Region]", "Region"),
+        ("NOT [Flag]", "Flag"),
+    ]:
+        refs = bracket_refs(mask_dax(dax))
+        assert refs[-1].name == name, dax
+        assert refs[-1].table == "", dax  # keyword is not a qualifying table
+
+
 def test_bracket_refs_ignores_brackets_inside_strings():
     refs = bracket_refs(mask_dax('IF(x, "[NotARef]", [Real])'))
     assert [r.name for r in refs] == ["Real"]

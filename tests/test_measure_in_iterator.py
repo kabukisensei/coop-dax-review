@@ -128,6 +128,44 @@ def test_nested_iterators_no_double_count(make_catalog):
     assert len(findings) == 1
 
 
+# -- a measure ref after RETURN inside an iterator still fires ---------------
+
+
+def test_return_measure_ref_inside_iterator_fires(make_catalog):
+    # `RETURN [Base]` inside SUMX is a bare measure ref (not a `RETURN[...]`
+    # table prefix), so the iterator context-transition rule must still fire
+    # (regression: the keyword-before-bracket mis-parse made it skip the ref).
+    cat = make_catalog(
+        measures=[
+            ("Sales: Base", "SUM(FactSales[Revenue])"),
+            ("Sales: M", "SUMX(FactSales, VAR z = 1 RETURN [Sales: Base])"),
+        ],
+        tables=[("FactSales", ["Revenue"])],
+    )
+    findings = _run(cat)
+    assert len(findings) == 1
+    assert "Sales: Base" in findings[0].message
+
+
+# -- nested iterators name the innermost enclosing iterator ------------------
+
+
+def test_nested_iterator_names_innermost(make_catalog):
+    # [Total] sits directly inside AVERAGEX (itself inside SUMX) — the message
+    # must name AVERAGEX, the iterator that actually wraps the reference.
+    cat = make_catalog(
+        measures=[
+            ("Sales: Total", "SUM(FactSales[Revenue])"),
+            ("Sales: M", "SUMX(FactSales, AVERAGEX(FactSales, [Sales: Total]))"),
+        ],
+        tables=[("FactSales", ["Revenue"])],
+    )
+    findings = _run(cat)
+    assert len(findings) == 1
+    assert "AVERAGEX" in findings[0].message
+    assert "SUMX" not in findings[0].message
+
+
 # -- multiple distinct measure refs in one iterator each fire ---------------
 
 
