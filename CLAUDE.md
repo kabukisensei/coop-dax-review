@@ -123,9 +123,10 @@ there (`text` / `catalog` / `model` / `agent`) tells you what context each rule 
 
 ```
 coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
-                      [--format text|json|markdown|html] [-o FILE] [--open/--no-open]
-                      [--color/--no-color] [--baseline <path>] [--write-baseline <path>]
-                      [--min-severity ...] [--log-file <path>] [--strict]
+                      [--format text|json|markdown|html] [-o FILE] [--html FILE] [--md FILE]
+                      [--open/--no-open] [--color/--no-color] [--baseline <path>]
+                      [--write-baseline <path>] [--save-ignores] [--min-severity ...]
+                      [--log-file <path>] [--strict]
 coop-dax-review rules
 coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
@@ -136,6 +137,18 @@ coop-dax-review --version
   / `--baseline`) for ratcheting on legacy models. Findings carry a stable, line-independent
   `Finding.fingerprint()`; the JSON adds `schema_version`, a `verdict`, `models_checked`, and a
   `fingerprint` per finding/agent-review item.
+- **`rules.yml` ignore list** (core `RuleConfig.ignored_fingerprints` + `add_ignores`): an optional
+  top-level `ignore:` list in `rules.yml` — human-readable, fingerprint-matched suppressions living
+  in the one writable config file. Filtered before the `--min-severity` floor (like the baseline). A
+  stale entry (no longer matching a current finding) is reported as an `ignore_stale` diagnostic.
+  `check --save-ignores` shows an interactive checkbox (opt-in, all unchecked) of this run's findings
+  and appends the picks to `rules.yml` via core `add_ignores` (interactive terminal only). Config
+  discovery (`_config_read_path`): `--config` if given, else a `rules.yml` in the current directory
+  (so save-then-re-run silences with no flags), else beside the standards file; writes go to
+  `--config` else `./rules.yml` (never the bundled package dir).
+- **Extra report sinks**: `--html FILE` / `--md FILE` write a self-contained HTML / Markdown report
+  in *addition* to the main `--format` output (they compose with any format and never open a
+  browser). Distinct from `--format html`, which always writes/opens a single default-named file.
 
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.

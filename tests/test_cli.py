@@ -195,9 +195,11 @@ def test_html_format_writes_file_opens_nothing_under_test(tmp_path):
     assert body.startswith("<!DOCTYPE html>")
     assert "</html>" in body
     assert "DAX-" in body  # at least one rule fired in the fixtures
-    assert "HTML report written to" in result.output
-    # the path is shown for the user, as a POSIX path (OS-stable; backslashes on Windows otherwise)
-    assert report.resolve().as_posix() in result.output
+    # The path is announced on STDERR (stdout stays the clean report artifact), as a
+    # POSIX path (OS-stable; backslashes on Windows otherwise).
+    assert "HTML report written to" in result.stderr
+    assert report.resolve().as_posix() in result.stderr
+    assert "HTML report written to" not in result.stdout  # stdout stays clean for a piped read
 
 
 def test_html_defaults_to_a_file_in_cwd():
@@ -368,3 +370,128 @@ def test_interactive_picker_cancelled_returns_none(tmp_path, monkeypatch):
     monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox())
     monkeypatch.setattr(questionary, "Choice", lambda **k: k.get("value"))
     assert climod._interactive_pick_paths(tmp_path) is None
+
+
+def _all_findings():
+    """Every finding on the fixtures, as JSON dicts (deterministic order)."""
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--format", "json"]).output
+    return json.loads(out)["findings"]
+
+
+def _unique_finding_with_plain_object():
+    """The first finding whose rule-id fires exactly once AND whose object carries
+    no ``: `` (a YAML mapping indicator). Suppressing it makes that rule-id vanish
+    from the report, and its ``where`` round-trips cleanly through rules.yml. Both
+    hold deterministically on the fixtures."""
+    from collections import Counter
+
+    findings = _all_findings()
+    counts = Counter(f["rule_id"] for f in findings)
+    for f in findings:
+        if counts[f["rule_id"]] == 1 and ": " not in f["object"]:
+            return f
+    raise AssertionError("no single-firing rule with a plain object on the fixtures")
+
+
+def test_html_and_md_extra_sinks_compose_with_text(tmp_path):
+    # --html + --md are EXTRA sinks: the main text report still prints to the console.
+    html = tmp_path / "r.html"
+    md = tmp_path / "r.md"
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--html", str(html), "--md", str(md)])
+    assert result.exit_code == 0
+    assert html.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+    assert md.read_text(encoding="utf-8").startswith("# coop-dax-review report")
+    # the main text report is unaffected — a finding rule-id still shows on the console
+    assert "DAX-" in result.output
+
+
+def test_config_ignore_suppresses_all_findings(tmp_path):
+    # Ignoring every fingerprint from a run leaves the report clean (agent-review
+    # items still pass through, exactly like the baseline path).
+    findings = _all_findings()
+    entries = "".join(f"  - fingerprint: {f['fingerprint']}\n" for f in findings)
+    cfg = tmp_path / "rules.yml"
+    cfg.write_text("ignore:\n" + entries, encoding="utf-8")
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg)]).output
+    for rule_id in {f["rule_id"] for f in findings}:
+        assert rule_id not in out  # every ignored finding is gone
+    assert "no issues found" in out  # the tool's clean phrasing
+
+
+def test_config_ignore_suppresses_a_single_finding(tmp_path):
+    finding = _unique_finding_with_plain_object()
+    cfg = tmp_path / "rules.yml"
+    cfg.write_text(f"ignore:\n  - fingerprint: {finding['fingerprint']}\n", encoding="utf-8")
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg)]).output
+    assert finding["rule_id"] not in out  # the one ignored finding is gone
+
+
+def test_stale_ignore_entry_warns(tmp_path):
+    cfg = tmp_path / "rules.yml"
+    cfg.write_text("ignore:\n  - fingerprint: deadbeefdead\n", encoding="utf-8")
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg)]).output
+    assert "ignore:" in out and "no longer" in out
+
+
+def test_save_ignores_full_loop_then_silenced(tmp_path, monkeypatch):
+    from coop_dax_review.standards import RuleConfig
+    from coop_dax_review import cli as climod
+
+    findings = _all_findings()
+    # Prove the round-trip specifically for a measure whose name uses the DAX
+    # "[Category: Name]" house style — its ": " must survive rules.yml write+reload
+    # (a bare emit would corrupt the file; core quotes it).
+    colon = [f for f in findings if ": " in f["object"]]
+    target = colon[0] if colon else findings[0]
+
+    # An interactive-terminal only flow -> pretend we're at a TTY.
+    monkeypatch.setattr(climod, "_stdio_interactive", lambda: True)
+
+    class _FakeCheckbox:
+        def __init__(self, *a, **k):
+            self._values = k.get("choices", [])
+
+        def ask(self):  # the user checks every offered finding
+            return list(self._values)
+
+    import questionary
+
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox(**k))
+    monkeypatch.setattr(questionary, "Choice", lambda **k: k.get("value"))
+
+    cfg = tmp_path / "rules.yml"
+    saved = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg), "--save-ignores"])
+    assert saved.exit_code == 0
+    assert cfg.exists()
+    ignored = RuleConfig.load(cfg).ignored_fingerprints  # must re-parse without error
+    assert target["fingerprint"] in ignored
+    assert target["fingerprint"] in cfg.read_text(encoding="utf-8")
+    # re-run against the now-populated ignore list -> every ignored finding is silenced
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg)]).output
+    for rule_id in {f["rule_id"] for f in findings}:
+        assert rule_id not in out
+    assert "no issues found" in out
+
+
+def test_save_ignores_no_terminal_writes_nothing(tmp_path, monkeypatch):
+    from coop_dax_review import cli as climod
+
+    monkeypatch.setattr(climod, "_stdio_interactive", lambda: False)
+    cfg = tmp_path / "rules.yml"
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg), "--save-ignores"])
+    assert result.exit_code == 0
+    assert "needs an interactive terminal" in result.output
+    assert not cfg.exists()  # nothing written off-TTY
+
+
+def test_cwd_rules_yml_is_auto_discovered(tmp_path, monkeypatch):
+    # A rules.yml in the working directory is picked up with no --config flag.
+    # Fingerprints embed the cwd-relative display path, so compute them from the
+    # SAME cwd we scan from — derive them after chdir.
+    monkeypatch.chdir(tmp_path)
+    finding = _unique_finding_with_plain_object()
+    (tmp_path / "rules.yml").write_text(
+        f"ignore:\n  - fingerprint: {finding['fingerprint']}\n", encoding="utf-8"
+    )
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES)]).output
+    assert finding["rule_id"] not in out  # auto-discovered ignore silenced it

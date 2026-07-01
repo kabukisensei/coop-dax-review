@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "coop-review-core>=0.1.2",
+    "coop-review-core>=0.2.0",
     "PyYAML>=6.0",
     "click>=8.1",
     "questionary>=2.0",

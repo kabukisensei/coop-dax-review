@@ -27,9 +27,9 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 ```sh
 coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html] [-o FILE]
-                      [--open/--no-open] [--color/--no-color] [--log-file FILE]
-                      [--baseline FILE] [--write-baseline FILE]
-                      [--min-severity error|warning|info] [--strict]
+                      [--html FILE] [--md FILE] [--open/--no-open] [--color/--no-color]
+                      [--log-file FILE] [--baseline FILE] [--write-baseline FILE]
+                      [--save-ignores] [--min-severity error|warning|info] [--strict]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
 coop-dax-review upgrade               # show the command to update (never self-applies; alias: update)
 coop-dax-review --version
@@ -43,9 +43,9 @@ coop-dax-review --version
   finding remains at/above `--min-severity`.
 - `--standards <path>` overrides the bundled standards (e.g. point it at a canonical company
   standards file). Its sha256 travels in the JSON so the agent knows which standards a report used.
-- A `rules.yml` beside the standards file (or `--config`) can disable rules, override severities,
-  and **tune thresholds** — all with no rebuild. For example, raise what counts as a "non-trivial"
-  measure:
+- A `rules.yml` (found via `--config`, else a `rules.yml` in the current directory, else beside the
+  standards file) can disable rules, override severities, and **tune thresholds** — all with no
+  rebuild. For example, raise what counts as a "non-trivial" measure:
   ```yaml
   rules:
     DAX-VAR-RETURN:
@@ -71,6 +71,15 @@ network). It is always written to a file — `coop-dax-review-report.html` by de
 e.g. in CI). `upgrade`/`update` print the exact command to run yourself (`pipx upgrade
 coop-dax-review`, etc.) rather than self-applying, since a package manager can't replace the tool
 while it is running.
+
+Want a report file *and* the usual console/JSON output in one run? `--html FILE` and `--md FILE`
+are extra sinks: they write a self-contained HTML and/or Markdown report to the paths you name in
+addition to whatever `--format` prints, and never open a browser. Handy for CI — e.g. keep the JSON
+contract on stdout while dropping a human-readable HTML artifact alongside it:
+
+```sh
+coop-dax-review check . --format json --html report.html --md report.md
+```
 
 ## What it checks
 
@@ -115,7 +124,7 @@ folders, explicit measures); `docs/standards-proposed-additions.md` is the origi
 
 ## Suppressing findings (adopting on an existing model)
 
-Two deterministic, never-blocking ways to silence findings you've already triaged:
+Three deterministic, never-blocking ways to silence findings you've already triaged:
 
 - **Inline** — drop a comment on a finding's line (or the line directly above it):
   ```
@@ -123,6 +132,21 @@ Two deterministic, never-blocking ways to silence findings you've already triage
   ```
   List several rule ids (`ignore DAX-A, DAX-B`), or use a bare `ignore` / `*` to silence every
   rule on that line. The `reason:` text is for humans; it's ignored by the parser.
+- **`rules.yml` ignore list** — a human-readable, fingerprint-matched suppression list that lives
+  in the one config file (like a baseline, but readable and hand-editable). Add an `ignore:` block:
+  ```yaml
+  ignore:
+    - fingerprint: 4ad6aeb79867
+      rule: DAX-BIDI-RELATIONSHIP        # rule / where / note are for humans; matching is by fingerprint
+      where: Sales/FactSales[ProductId] -> DimCustomer[CustomerId]
+      note: intentional many-to-many, reviewed 2026-07
+  ```
+  You don't have to hand-copy fingerprints: run `check --save-ignores` and, at an interactive
+  terminal, you get a checkbox of this run's findings (all unchecked — opt in to the ones you want
+  gone); the picks are appended to `rules.yml` for you, so the next run silences them. A `rules.yml`
+  in your current directory is auto-discovered with no `--config` flag, so the loop is just
+  "run, `--save-ignores`, re-run". An ignore entry that no longer matches any finding (you fixed it)
+  is reported as a diagnostic so the list self-cleans.
 - **Baseline (ratchet)** — record today's findings and surface only *new* ones going forward:
   ```sh
   coop-dax-review check . --write-baseline dax-baseline.json   # once, to capture the status quo

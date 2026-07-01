@@ -5,6 +5,24 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [0.7.0] — 2026-07-01
+### Added
+- **`rules.yml` `ignore:` list** — a human-readable, fingerprint-matched suppression list that lives
+  in the one writable config file (a readable, hand-editable companion to the JSON baseline).
+  Filtered before the `--min-severity` floor, like the baseline. An entry that no longer matches a
+  current finding is reported as an `ignore_stale` diagnostic so the list self-cleans. Backed by
+  `coop-review-core` 0.2.0 (`RuleConfig.ignored_fingerprints`).
+- **`check --save-ignores`** — at an interactive terminal, a checkbox of this run's findings (all
+  unchecked; opt in to what you want silenced) whose picks are appended to `rules.yml` via core
+  `add_ignores`, so the next run silences them. A `rules.yml` in the current directory is now
+  auto-discovered with no `--config` flag, so the loop is just "run, `--save-ignores`, re-run".
+- **`--html FILE` / `--md FILE` extra report sinks** — write a self-contained HTML and/or Markdown
+  report to a named path *in addition* to the main `--format` output (they compose with any format
+  and never open a browser). Distinct from `--format html`, which still writes/opens one file.
+### Changed
+- Bumped the `coop-review-core` dependency floor to `>=0.2.0` (adds the ignore-list config, the
+  `add_ignores` writer, and the `IGNORE_STALE` diagnostic category the above features build on).
+
 ## [0.6.4] — 2026-06-29
 ### Fixed
 - **Keyword before a bracket ref mis-recorded as the qualifying table** — `bracket_refs` read a DAX
@@ -107,6 +125,7 @@ field and are called out here.
 - Initial release: 24 DAX/model-standard rules over TMDL/`.bim` Power BI semantic models, a human
   report, and the machine JSON contract for the company analytics agent. Offline, advisory, never blocks.
 
+[0.7.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.7.0
 [0.6.4]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.4
 [0.6.3]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.3
 [0.6.2]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.2
