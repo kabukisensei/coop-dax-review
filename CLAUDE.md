@@ -134,9 +134,13 @@ coop-dax-review --version
 
 - **Suppressions** (`suppressions.py`): inline `coop-dax-review:ignore <RULE>` comments (on the
   finding's line or the line above; bare/`*` = all) and a fingerprint **baseline** (`--write-baseline`
-  / `--baseline`) for ratcheting on legacy models. Findings carry a stable, line-independent
-  `Finding.fingerprint()`; the JSON adds `schema_version`, a `verdict`, `models_checked`, and a
-  `fingerprint` per finding/agent-review item.
+  / `--baseline`) for ratcheting on legacy models. All three suppression mechanisms (inline,
+  baseline, `rules.yml` ignore list) filter findings **and `agent_review` items** before the
+  `--min-severity` floor (`--write-baseline` records agent fingerprints too; an entry matching only
+  an agent item is never stale) — same contract as coop-sql-review. Findings carry a stable, line-
+  and path-independent `Finding.fingerprint()` (`rule_id, model, object, message/note` — no file, no
+  line — schema_version 2, so baselines/ignores survive a cwd or machine change); the JSON adds
+  `schema_version`, a `verdict`, `models_checked`, and a `fingerprint` per finding/agent-review item.
 - **`rules.yml` ignore list** (core `RuleConfig.ignored_fingerprints` + `add_ignores`): an optional
   top-level `ignore:` list in `rules.yml` — human-readable, fingerprint-matched suppressions living
   in the one writable config file. Filtered before the `--min-severity` floor (like the baseline). A
@@ -191,7 +195,8 @@ coop-dax-review --version
 - **Non-blocking, offline, deterministic** — as coop-data-doc.
 - Strip DAX comments/strings before any text matching (reuse `dax.py`).
 - `DAX-MARKED-DATE-TABLE` fires only when the model actually uses time-intelligence functions
-  (`DATESYTD`, `SAMEPERIODLASTYEAR`, `DATEADD`, `TOTALYTD`, …).
+  (`DATESYTD`, `SAMEPERIODLASTYEAR`, `DATEADD`, `TOTALYTD`, …) — in measures or in
+  calculated-column expressions.
 - Thresholds for "non-trivial" measures (`DAX-VAR-RETURN`, `DAX-COMPLEX-NO-HEADER`) must be
   configurable.
 

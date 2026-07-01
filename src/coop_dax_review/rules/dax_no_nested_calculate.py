@@ -1,10 +1,15 @@
-"""DAX-NO-NESTED-CALCULATE (§3): never nest CALCULATE inside CALCULATE.
+"""DAX-NO-NESTED-CALCULATE (§3): never nest CALCULATE directly inside CALCULATE.
 
-§3 says a ``CALCULATE`` directly inside another ``CALCULATE`` should be broken
-apart with ``VAR``. We scan the comment/string-masked DAX, match parentheses,
-and flag any ``CALCULATE(`` opened while another ``CALCULATE(`` is still open
-on the paren stack. CALCULATETABLE counts too (same context-transition trap).
-The finding points at the inner ``CALCULATE``'s line.
+§3 says a ``CALCULATE`` *directly* inside another ``CALCULATE`` should be
+broken apart with ``VAR``. We scan the comment/string-masked DAX, tag every
+call's opening paren with its function, and flag a ``CALCULATE(`` opened while
+another ``CALCULATE(`` is still open on the paren stack with **no iterator
+frame in between**. When an iterator (``SUMX``/``AVERAGEX``/``FILTER``/...)
+mediates the nesting, the inner CALCULATE exists to force a *per-row* context
+transition (the §9 idiom) — hoisting it into a VAR would evaluate it once
+outside the row context and change results, so that shape is not reported.
+CALCULATETABLE counts too (same context-transition trap). The finding points
+at the inner ``CALCULATE``'s line.
 """
 
 from __future__ import annotations
@@ -13,40 +18,50 @@ import re
 
 from coop_dax_review.finding import Finding
 from coop_dax_review.rules.base import Rule, RuleContext
-from coop_dax_review.rules.helpers import blank_identifiers, line_at, masked
+from coop_dax_review.rules.helpers import ITERATOR_FUNCS, blank_identifiers, line_at, masked
 
-_CALC_RE = re.compile(r"\bCALCULATE(?:TABLE)?\b", re.IGNORECASE)
+# A function call: an identifier (dotted names like PERCENTILEX.INC allowed)
+# immediately followed by an opening paren — used to tag each '(' with its
+# owning function so the paren stack knows which frames are CALCULATEs and
+# which are iterators.
+_FUNC_PAREN_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
+_CALC_NAMES = frozenset({"calculate", "calculatetable"})
 
 
 def _nested_offsets(text: str) -> list[int]:
     """Offsets of every ``CALCULATE`` whose paren opens inside another open
-    CALCULATE's parens."""
+    CALCULATE's parens with no iterator frame between the two."""
     # Blank identifier contents (length-preserving, so offsets/lines are
     # unchanged) so parentheses inside a column/measure name like ``[Net (USD)]``
     # or a quoted table name like ``'Sales (2024)'`` cannot perturb the
     # CALCULATE-depth paren stack.
     text = blank_identifiers(text)
-    # Map each '(' that immediately follows a CALCULATE keyword to its offset.
-    calc_paren: dict[int, int] = {}
-    for match in _CALC_RE.finditer(text):
-        rest = text[match.end() :]
-        stripped = rest.lstrip()
-        if stripped.startswith("("):
-            paren_idx = match.end() + (len(rest) - len(stripped))
-            calc_paren[paren_idx] = match.start()
+    # Map each call's '(' offset to (function name lower-cased, name offset).
+    paren_func: dict[int, tuple[str, int]] = {}
+    for match in _FUNC_PAREN_RE.finditer(text):
+        paren_func[match.end() - 1] = (match.group(1).lower(), match.start())
 
     nested: list[int] = []
-    stack: list[bool] = []  # True when the open paren belongs to a CALCULATE
-    open_calcs = 0
+    stack: list[str] = []  # each open paren's frame kind: "calc" | "iter" | ""
     for idx, char in enumerate(text):
         if char == "(":
-            is_calc = idx in calc_paren
-            if is_calc and open_calcs > 0:
-                nested.append(calc_paren[idx])
-            stack.append(is_calc)
-            open_calcs += is_calc
+            func, name_offset = paren_func.get(idx, ("", idx))
+            if func in _CALC_NAMES:
+                kind = "calc"
+                # Walk the enclosing frames innermost-first: a CALCULATE seen
+                # before any iterator means DIRECT nesting (report); an
+                # iterator in between is the endorsed per-row idiom (skip).
+                for outer in reversed(stack):
+                    if outer == "iter":
+                        break
+                    if outer == "calc":
+                        nested.append(name_offset)
+                        break
+            else:
+                kind = "iter" if func in ITERATOR_FUNCS else ""
+            stack.append(kind)
         elif char == ")" and stack:
-            open_calcs -= stack.pop()
+            stack.pop()
     return nested
 
 
@@ -68,7 +83,7 @@ def check(ctx: RuleContext) -> list[Finding]:
 
 RULE = Rule(
     id="DAX-NO-NESTED-CALCULATE",
-    title="No CALCULATE nested inside another CALCULATE",
+    title="No CALCULATE nested directly inside another CALCULATE",
     severity="warning",
     category="calculate",
     standard_ref="§3",

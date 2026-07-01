@@ -49,9 +49,14 @@ class Finding:
         )
 
     def fingerprint(self) -> str:
-        """Stable, line-independent identity, so a consumer can track or suppress
-        this finding across runs even as lines shift above it."""
-        return _fingerprint(self.rule_id, self.model, self.file, self.object, self.message)
+        """Stable identity: ``(rule_id, model, object, message)``. Deliberately
+        excludes the line number AND the display path (``file`` is relative to
+        the invocation cwd, or absolute — both machine/where-you-ran-it
+        specific), so a baseline or ``rules.yml`` ignore written from one
+        directory still matches from another. Two files carrying the same
+        rule + qualified object + message are the same logical issue —
+        suppressing both together is intended."""
+        return _fingerprint(self.rule_id, self.model, self.object, self.message)
 
 
 @dataclass(frozen=True)
@@ -70,5 +75,5 @@ class AgentReviewItem:
         return (self.model, self.file, self.rule_id, self.object, self.line, self.note)
 
     def fingerprint(self) -> str:
-        """Stable, line-independent identity (see :meth:`Finding.fingerprint`)."""
-        return _fingerprint(self.rule_id, self.model, self.file, self.object, self.note)
+        """Stable, line- and path-independent identity (see :meth:`Finding.fingerprint`)."""
+        return _fingerprint(self.rule_id, self.model, self.object, self.note)

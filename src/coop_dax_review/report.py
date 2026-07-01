@@ -45,7 +45,10 @@ def _sty(text: str, *codes: str, color: bool) -> str:
 
 # The agent JSON contract version. Bump on any breaking change to the shape so a
 # consumer can pin/branch on it; additive fields don't require a bump.
-SCHEMA_VERSION = 1
+# 2: fingerprints dropped the cwd-relative display path from their identity
+#    (now rule_id+model+object+message) — baselines and rules.yml ignore lists
+#    written under schema 1 must be regenerated once.
+SCHEMA_VERSION = 2
 
 
 def _verdict(result: Result) -> dict:

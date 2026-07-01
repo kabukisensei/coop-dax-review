@@ -95,11 +95,11 @@ Run `coop-dax-review rules` for the live list. Deterministic rules (reported as 
 | `DAX-MEASURE-NOT-PREFIXED` | 1 | warning | `Table[X]` where `X` is a measure (measures take no prefix) |
 | `DAX-COLUMN-PREFIXED` | 1 | warning | bare `[X]` where `X` is a column (columns need `Table[X]`) |
 | `DAX-VAR-RETURN` | 2 | info | non-trivial measure with no `VAR`/`RETURN` structure |
-| `DAX-NO-NESTED-CALCULATE` | 3 | warning | `CALCULATE` nested inside `CALCULATE` |
+| `DAX-NO-NESTED-CALCULATE` | 3 | warning | `CALCULATE` nested *directly* inside `CALCULATE` (iterator-mediated per-row nesting is fine) |
 | `DAX-FILTER-TABLE-IN-CALCULATE` | 4 | warning | `FILTER(<table>, <col> = ...)` where a plain column filter suffices |
 | `DAX-SNOWFLAKE` | 6 | info | a table with relationships chained through it (snowflake link) |
 | `DAX-BIDI-RELATIONSHIP` | 7 | warning | a bidirectional cross-filter relationship |
-| `DAX-MARKED-DATE-TABLE` | 8 | warning | time-intelligence used but no marked Date table |
+| `DAX-MARKED-DATE-TABLE` | 8 | warning | time-intelligence used (in a measure or calculated column) but no marked Date table |
 | `DAX-MEASURE-IN-ITERATOR` | 9 | info | a measure referenced inside a row iterator (hidden context transition) |
 | `DAX-COMPLEX-NO-HEADER` | 12 | info | a complex measure (≥3 VARs) without a `/* ... */` header |
 | `DAX-DIRECTLAKE-NO-CALC-COL` | 13 | warning | a calculated column in a Direct Lake model |
@@ -115,7 +115,7 @@ Agent-judgment rules — the tool detects the construct but emits to the JSON `a
 
 | Rule | § | Judges |
 |---|---|---|
-| `DAX-KEEPFILTERS-NEEDED` | 5 | whether a CALCULATE boolean filter needs `KEEPFILTERS` |
+| `DAX-KEEPFILTERS-NEEDED` | 5 | whether a CALCULATE boolean filter needs `KEEPFILTERS` (checked per top-level filter argument) |
 | `DAX-STAR-SCHEMA` | 6 | whether a snowflake chain should be flattened to a star |
 | `DAX-CONTEXT-TRANSITION` | 9 | whether an iterator's context transition is intended/correct |
 | `DAX-SIMPLE-FUNCTIONS` | 10 | whether a CALCULATE-heavy measure could use simpler functions |
@@ -128,7 +128,9 @@ folders, explicit measures); `docs/standards-proposed-additions.md` is the origi
 
 ## Suppressing findings (adopting on an existing model)
 
-Three deterministic, never-blocking ways to silence findings you've already triaged:
+Three deterministic, never-blocking ways to silence findings you've already triaged. All three
+apply to regular findings **and** to `agent_review` items (the judgment-call prompts in the JSON),
+so a triaged item stays silenced everywhere:
 
 - **Inline** — drop a comment on a finding's line (or the line directly above it):
   ```
@@ -156,15 +158,21 @@ Three deterministic, never-blocking ways to silence findings you've already tria
   coop-dax-review check . --write-baseline dax-baseline.json   # once, to capture the status quo
   coop-dax-review check . --baseline dax-baseline.json         # thereafter: only new findings appear
   ```
-  Each finding has a stable, line-independent `fingerprint` (in the JSON), and the baseline is a
-  sorted list of those. A baseline entry that no longer matches any finding (you fixed it) is
-  reported as a diagnostic so the file self-cleans (`--write-baseline` to prune).
+  Each finding has a stable `fingerprint` (in the JSON) — independent of line numbers **and** of
+  file paths, so a baseline written on one machine or from one directory still matches from
+  another — and the baseline is a sorted list of those. A baseline entry that no longer matches
+  any finding (you fixed it) is reported as a diagnostic so the file self-cleans
+  (`--write-baseline` to prune).
+
+  > **One-time migration (schema_version 2):** fingerprints used to include the cwd-relative file
+  > path and changed in this release. Delete and regenerate any baseline files and `rules.yml`
+  > `ignore:` lists written by earlier versions (re-run `--write-baseline` / `--save-ignores`).
 
 ## Agent JSON contract
 
 ```json
 {
-  "tool": "coop-dax-review", "schema_version": 1, "version": "x.y.z",
+  "tool": "coop-dax-review", "schema_version": 2, "version": "x.y.z",
   "standards": {"path": "...", "sha256": "..."},
   "models_checked": 2,
   "verdict": {"clean": false, "highest_severity": "warning"},

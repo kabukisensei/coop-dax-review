@@ -5,6 +5,64 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [0.9.0] — 2026-07-01
+### Changed
+- **Suppressions now cover `agent_review` items** exactly like findings: inline
+  `coop-dax-review:ignore` directives, `--baseline` fingerprints, and the `rules.yml` `ignore:`
+  list all silence agent-review items too, and `--write-baseline` records their fingerprints. A
+  baseline/ignore entry that matches only an agent-review item is not reported as stale. Matches
+  the identical change in coop-sql-review.
+- **Fingerprints no longer include the file path — `schema_version` 2** (breaking, one-time).
+  A finding's `fingerprint` used to hash the cwd-relative display path, so baselines and
+  `rules.yml` `ignore:` lists silently stopped matching when the tool ran from a different
+  directory or machine. The identity is now `(rule_id, model, object, message)` (agent-review
+  items: `(rule_id, model, object, note)`) — path- and line-independent. Two files carrying the
+  same rule + qualified object + message are the same logical issue and are suppressed together.
+  **Migration:** delete and regenerate baseline files and `rules.yml` `ignore:` lists once
+  (re-run `--write-baseline` / `--save-ignores`). Coordinated with `coop-sql-review` (same
+  `schema_version` 2).
+- **`DAX-NO-NESTED-CALCULATE` now flags only *direct* nesting (§3)** — a `CALCULATE` inside an
+  iterator (`SUMX`/`AVERAGEX`/`FILTER`/…) inside a `CALCULATE` is the endorsed §9 per-row
+  context-transition idiom; hoisting it into a VAR would change results, so it is no longer
+  reported. Nesting through a non-iterator scalar call (e.g. `ROUND`) still fires. The shared
+  iterator set also gained the statistical iterators (`PERCENTILEX.INC/EXC`, `STDEVX.P/S`,
+  `VARX.P/S`).
+- **`DAX-KEEPFILTERS-NEEDED` is now evaluated per top-level `CALCULATE` filter argument (§5)** —
+  a sibling `KEEPFILTERS(...)` no longer suppresses a bare boolean predicate next to it, and a
+  comparison living inside a nested call (`FILTER`/`ALL`/`MAX`…) no longer triggers it. The
+  agent-review note names the offending predicate(s).
+- **`DAX-MARKED-DATE-TABLE` also scans calculated columns (§8)** — time intelligence living only
+  in a calculated-column expression (e.g. a `TOTALYTD` column) now triggers the marked-Date-table
+  check; the finding names the offending columns as `Table[Column]` alongside measures.
+### Fixed
+- **A lone `"` in a `//`/`--` line comment swallowed a real `/* ... */` header** — the §12 helper
+  (`has_block_comment`) didn't consume line comments, so an unpaired quote inside one (an inch
+  mark like `5/8"`) started a phantom string literal that blanked a following header block and
+  made `DAX-COMPLEX-NO-HEADER` fire on a documented measure. The scanner now consumes all three
+  token kinds in one pass, mirroring the DAX masker.
+
+## [0.8.0] — 2026-07-01
+### Fixed
+- **TMDL measure DAX no longer truncates at `Word:` lines** — the body terminator is
+  comment-state-aware and restricted to the finite set of real TMDL measure properties, so the
+  standards' own §12 header comment (`Measure:`/`Purpose:`/…) parses intact instead of blinding
+  every text rule with a 2-character body.
+- **TMDL models group by root directory** (`.SemanticModel`/`definition` root, else the parent
+  folder) instead of bare model name: same-named dev/prod models stay distinct and a flat folder
+  of `.tmdl` files is one model, not a phantom model per file.
+- One unparseable table header is contained as a per-file `parse_failed` diagnostic instead of
+  an `AttributeError` zeroing the whole model; UTF-16/undecodable TMDL emits `parse_failed`
+  instead of silently reporting the model clean.
+- Quoted table identifiers are masked before text scans (`'Actual/Budget'` no longer fires
+  `DAX-USE-DIVIDE`; parens in table names no longer skew `DAX-VAR-RETURN` or CALCULATE depth).
+- Malformed/mis-encoded `rules.yml` and a missing explicit `--config` are friendly one-line
+  usage errors (exit 2); zero models found still emits the full JSON contract and `--strict`
+  exits 2; explicitly passed non-`.tmdl`/`.bim` files are called out instead of parsed as a
+  phantom `.bim` (with resolved-path dedup so overlapping roots don't double-count).
+### Added
+- `upgrade --check` restored and the parse progress bar wired (coop-sql-review parity); the rule
+  registry raises loudly on a broken rule module and the advertised rule count is pinned by test.
+
 ## [0.7.1] — 2026-07-01
 ### Changed
 - **`check --help`** now documents the report-file flags (`--html`/`--md`) and `--save-ignores`

@@ -639,17 +639,27 @@ def check(
     result.findings = [
         f for f in result.findings if not is_inline_suppressed(f.rule_id, f.line, inline.get(f.file, {}))
     ]
+    result.agent_review = [
+        a for a in result.agent_review if not is_inline_suppressed(a.rule_id, a.line, inline.get(a.file, {}))
+    ]
     # The full set of fingerprints this run produced (pre-baseline, pre-ignore) so a
-    # stale ignore entry can be told from one another filter already consumed.
-    present_fingerprints = {f.fingerprint() for f in result.findings}
+    # stale ignore entry can be told from one another filter already consumed. An
+    # entry matching only an agent-review item is NOT stale.
+    present_fingerprints = {f.fingerprint() for f in result.findings} | {
+        a.fingerprint() for a in result.agent_review
+    }
     if write_baseline_path:
-        count = write_baseline(Path(write_baseline_path), [f.fingerprint() for f in result.findings])
-        click.echo(f"Wrote baseline of {count} finding(s) to {write_baseline_path}", err=True)
+        count = write_baseline(Path(write_baseline_path), sorted(present_fingerprints))
+        click.echo(
+            f"Wrote baseline of {count} finding/agent-review entr{'y' if count == 1 else 'ies'} "
+            f"to {write_baseline_path}",
+            err=True,
+        )
     elif baseline_path:
         baseline_fps = load_baseline(Path(baseline_path))
-        seen = {f.fingerprint() for f in result.findings}
         result.findings = [f for f in result.findings if f.fingerprint() not in baseline_fps]
-        stale = len(baseline_fps - seen)
+        result.agent_review = [a for a in result.agent_review if a.fingerprint() not in baseline_fps]
+        stale = len(baseline_fps - present_fingerprints)
         if stale:
             result.diagnostics.append(
                 Diagnostic(
@@ -666,6 +676,9 @@ def check(
     # the --min-severity floor, so an ignored finding is gone regardless of severity.
     if config.ignored_fingerprints:
         result.findings = [f for f in result.findings if f.fingerprint() not in config.ignored_fingerprints]
+        result.agent_review = [
+            a for a in result.agent_review if a.fingerprint() not in config.ignored_fingerprints
+        ]
         stale = len(config.ignored_fingerprints - present_fingerprints)
         if stale:
             result.diagnostics.append(

@@ -73,7 +73,7 @@ coop-dax-review --version
 ## Agent integration contract (identical shape to coop-sql-review)
 ```json
 {
-  "tool": "coop-dax-review", "schema_version": 1, "version": "x.y.z",
+  "tool": "coop-dax-review", "schema_version": 2, "version": "x.y.z",
   "standards": {"path": "...", "sha256": "..."},
   "models_checked": 2,
   "verdict": {"clean": false, "highest_severity": "warning"},

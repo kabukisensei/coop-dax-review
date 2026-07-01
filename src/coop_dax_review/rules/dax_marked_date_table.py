@@ -2,15 +2,17 @@
 
 §8 requires a contiguous, *marked* Date table for time intelligence. This is
 a model+text rule: it triggers only when the model actually uses a
-time-intelligence function (so a model with no time logic is never nagged),
-and then fires once at the model level if no table is marked as a Date table
-(no column with ``dataCategory: Time`` / date-table template). The finding
-names the measures whose time-intel use motivated it.
+time-intelligence function — in a measure OR in a calculated column, which
+carries exactly the same requirement — and then fires once at the model level
+if no table is marked as a Date table (no column with ``dataCategory: Time`` /
+date-table template). The finding names the measures (``[Name]``) and
+calculated columns (``Table[Name]``) whose time-intel use motivated it.
 """
 
 from __future__ import annotations
 
 from coop_dax_review.finding import Finding
+from coop_dax_review.parsers.dax import mask_dax
 from coop_dax_review.rules.base import Rule, RuleContext
 from coop_dax_review.rules.helpers import TIME_INTEL_FUNCS, function_names, masked
 
@@ -23,6 +25,10 @@ def check(ctx: RuleContext) -> list[Finding]:
     for measure in ctx.catalog.measures:
         if function_names(masked(measure)) & TIME_INTEL_FUNCS:
             users.append(f"[{measure.name}]")
+    for table in ctx.catalog.tables:
+        for column in table.columns:
+            if column.expression and function_names(mask_dax(column.expression)) & TIME_INTEL_FUNCS:
+                users.append(f"{table.name}[{column.name}]")
     if not users:
         return []  # no time intelligence in the model -> rule does not apply
 

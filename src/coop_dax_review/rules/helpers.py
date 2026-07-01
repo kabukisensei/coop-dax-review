@@ -69,6 +69,12 @@ ITERATOR_FUNCS = frozenset(
         "productx",
         "geomeanx",
         "medianx",
+        "percentilex.exc",
+        "percentilex.inc",
+        "stdevx.p",
+        "stdevx.s",
+        "varx.p",
+        "varx.s",
         "filter",
         "addcolumns",
         "selectcolumns",
@@ -89,25 +95,30 @@ _VAR_RE = re.compile(r"\bVAR\b", re.IGNORECASE)
 _RETURN_RE = re.compile(r"\bRETURN\b", re.IGNORECASE)
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 _BRACKET_CONTENT_RE = re.compile(r"\[[^\[\]]*\]")
-# A string literal or a block comment, whichever starts first (single
-# left-to-right pass, mirroring dax._MASK_RE) — used to blank ONLY string
-# literals while leaving real comments intact, so a ``/* ... */`` substring that
-# lives inside a quoted string is not mistaken for a documentation header.
-_STRING_OR_BLOCK_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/', re.S)
+# A string literal, a block comment, or a line comment — whichever starts
+# first (single left-to-right pass over ALL three token kinds, mirroring
+# dax._MASK_RE) — used to blank ONLY string literals while leaving real
+# comments intact, so a ``/* ... */`` substring inside a quoted string is not
+# mistaken for a documentation header. The line-comment alternative matters
+# even though line comments pass through untouched: consuming a ``//`` / ``--``
+# run as a unit stops an unpaired ``"`` inside it (an inch mark like ``5/8"``)
+# from starting a phantom string that would swallow a following real header.
+_STRING_OR_COMMENT_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/|(?://|--)[^\n]*', re.S)
 
 
 def _blank_string_literals(dax: str) -> str:
     """``dax`` with string-literal *content* blanked (length-preserving) but
-    ``/* ... */`` block comments kept. A block comment encountered first is left
-    untouched so a ``"`` inside it cannot start a phantom string run."""
+    comments — ``/* ... */`` blocks AND ``//`` / ``--`` line comments — kept.
+    A comment encountered first is consumed as a unit and left untouched, so a
+    ``"`` inside it cannot start a phantom string run."""
 
     def repl(match: re.Match) -> str:
         run = match.group(0)
-        if run.startswith("/*"):
-            return run  # keep real block comments
+        if not run.startswith('"'):
+            return run  # keep real comments (block and line) intact
         return "".join("\n" if ch == "\n" else " " for ch in run)
 
-    return _STRING_OR_BLOCK_RE.sub(repl, dax)
+    return _STRING_OR_COMMENT_RE.sub(repl, dax)
 
 
 def blank_brackets(text: str) -> str:
@@ -160,6 +171,28 @@ def arg_span(text: str, open_paren: int) -> str:
             if depth == 0:
                 return text[open_paren + 1 : idx]
     return text[open_paren + 1 :]
+
+
+def split_top_commas(text: str) -> list[str]:
+    """Split ``text`` on top-level (depth-0) commas, respecting parens/brackets.
+
+    The argument-list splitter for an already-extracted call span (see
+    :func:`arg_span`): a comma inside a nested call or a bracket ref never
+    splits.
+    """
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for idx, ch in enumerate(text):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(text[start:idx])
+            start = idx + 1
+    parts.append(text[start:])
+    return parts
 
 
 def iter_calls(masked_dax: str, names: frozenset[str]) -> Iterator[tuple[str, int, str]]:

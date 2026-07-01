@@ -22,7 +22,7 @@ def test_check_json_contract_shape():
     payload = json.loads(result.output)
     assert payload["tool"] == "coop-dax-review"
     assert set(payload) >= {"findings", "summary", "agent_review", "standards", "diagnostics"}
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2  # 2: path-independent fingerprints
     assert set(payload["verdict"]) == {"clean", "highest_severity"}
     assert payload["standards"]["sha256"]
     for finding in payload["findings"]:

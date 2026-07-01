@@ -20,7 +20,7 @@ from coop_dax_review.finding import Finding
 from coop_dax_review.model import normalize
 from coop_dax_review.parsers.dax import bracket_refs
 from coop_dax_review.rules.base import Rule, RuleContext
-from coop_dax_review.rules.helpers import arg_span, iter_calls, line_at, masked
+from coop_dax_review.rules.helpers import arg_span, iter_calls, line_at, masked, split_top_commas
 
 _CALC_RE = re.compile(r"\bCALCULATE(?:TABLE)?\b\s*\(", re.IGNORECASE)
 _FILTER = frozenset({"filter"})
@@ -28,23 +28,6 @@ _FILTER = frozenset({"filter"})
 _BARE_TABLE_RE = re.compile(r"^(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_]*))$")
 _COMPARISON_RE = re.compile(r"<=|>=|<>|=|<|>")
 _CALL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*\s*\(")
-
-
-def _split_top_comma(text: str) -> list[str]:
-    """Split ``text`` on top-level (depth-0) commas, respecting parens/brackets."""
-    parts: list[str] = []
-    depth = 0
-    start = 0
-    for idx, ch in enumerate(text):
-        if ch in "([":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-        elif ch == "," and depth == 0:
-            parts.append(text[start:idx])
-            start = idx + 1
-    parts.append(text[start:])
-    return parts
 
 
 def _simple_table_predicate(predicate: str, table: str, ctx: RuleContext) -> bool:
@@ -85,7 +68,7 @@ def check(ctx: RuleContext) -> list[Finding]:
             args = arg_span(text, calc.end() - 1)
             base = calc.end() - 1  # offset of the CALCULATE '(' within `text`
             for _name, off, fargs in iter_calls(args, _FILTER):
-                parts = _split_top_comma(fargs)
+                parts = split_top_commas(fargs)
                 if len(parts) < 2:
                     continue
                 first = parts[0].strip()
