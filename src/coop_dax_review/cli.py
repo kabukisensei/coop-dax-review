@@ -449,7 +449,38 @@ def check(
     log_file: str | None,
     strict: bool,
 ) -> None:
-    """Check Power BI models (TMDL folders or .bim files) against the standards."""
+    """Check Power BI models (TMDL folders or .bim files) against the standards.
+
+    Advisory only: it reports, it never edits or blocks (exit 0 unless --strict).
+
+    \b
+    Report output:
+      The text report prints to the screen. To redirect or save it:
+        --format text|json|markdown|html   choose the format (default: text)
+        -o, --output FILE                  write that report to FILE
+                                           (--format html always writes a file)
+      To ALSO save shareable files in ONE run -- on top of whatever prints --
+      add either or both (they compose with each other and with --format):
+        --html FILE   a self-contained, branded HTML report
+        --md FILE     a Markdown report
+    \b
+        coop-dax-review check ./MyModel.SemanticModel --html report.html --md report.md
+
+    \b
+    Ignoring findings you've accepted (advisory -- nothing is ever deleted):
+      --save-ignores   After the report, pick findings from an interactive
+                       checklist (SPACE toggles, ENTER confirms). The picks are
+                       written to rules.yml and stay silenced on later runs:
+    \b
+        coop-dax-review check ./MyModel.SemanticModel --save-ignores   # tick to silence
+        coop-dax-review check ./MyModel.SemanticModel                   # they no longer show
+    \b
+      The ignore list lives in rules.yml as an `ignore:` list of fingerprints
+      (each with rule/where/note) -- editable by hand, and picked up
+      automatically when rules.yml sits in the current directory (or pass
+      --config FILE). You can also disable a whole rule in rules.yml, or drop an
+      inline `// coop-dax-review:ignore RULE-ID` comment on the finding's line.
+    """
     try:
         std_path = resolve_standards_path(standards_path)
     except StandardsError as exc:
