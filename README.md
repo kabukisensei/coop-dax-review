@@ -31,7 +31,7 @@ coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html] [-o FI
                       [--log-file FILE] [--baseline FILE] [--write-baseline FILE]
                       [--save-ignores] [--min-severity error|warning|info] [--strict]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
-coop-dax-review upgrade               # show the command to update (never self-applies; alias: update)
+coop-dax-review upgrade [--check]     # show the command to update (never self-applies; alias: update)
 coop-dax-review --version
 ```
 
@@ -40,12 +40,16 @@ coop-dax-review --version
 - **Run it with no paths in a terminal** and it offers a checkbox picker of the subfolders to check
   (all selected by default — press ENTER to scan everything).
 - **Advisory**: exit code is always `0`. `--strict` is the opt-in CI gate — exit `2` when any
-  finding remains at/above `--min-severity`.
+  finding remains at/above `--min-severity`, **or when no models were found/checked at all** (so a
+  typo'd path can't pass silently). A zero-model run still renders the full report (with
+  `models_checked: 0` and a `scan_empty` diagnostic per searched path).
 - `--standards <path>` overrides the bundled standards (e.g. point it at a canonical company
   standards file). Its sha256 travels in the JSON so the agent knows which standards a report used.
 - A `rules.yml` (found via `--config`, else a `rules.yml` in the current directory, else beside the
   standards file) can disable rules, override severities, and **tune thresholds** — all with no
-  rebuild. For example, raise what counts as a "non-trivial" measure:
+  rebuild. A broken `rules.yml` (bad YAML, wrong shape, a non-UTF-8 save) is a friendly one-line
+  error naming the file, and a `--config` path that doesn't exist is an error too (a typo can't
+  silently drop your overrides). For example, raise what counts as a "non-trivial" measure:
   ```yaml
   rules:
     DAX-VAR-RETURN:
@@ -70,7 +74,7 @@ network). It is always written to a file — `coop-dax-review-report.html` by de
 `-o` points — and the path is printed and opened in your browser (pass `--no-open` to skip the open,
 e.g. in CI). `upgrade`/`update` print the exact command to run yourself (`pipx upgrade
 coop-dax-review`, etc.) rather than self-applying, since a package manager can't replace the tool
-while it is running.
+while it is running; `upgrade --check` reports whether an update is available and stops there.
 
 Want a report file *and* the usual console/JSON output in one run? `--html FILE` and `--md FILE`
 are extra sinks: they write a self-contained HTML and/or Markdown report to the paths you name in

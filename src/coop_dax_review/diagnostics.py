@@ -16,3 +16,8 @@ from coop_review_core.diagnostics import (  # noqa: F401
     RULE_ERROR,
     Diagnostic,
 )
+
+# Tool-local category (not in core yet; mirrors coop-sql-review): a scan found
+# no TMDL/.bim models at all under a given path — models_checked=0 must stay
+# machine-distinguishable from "clean".
+SCAN_EMPTY = "scan_empty"

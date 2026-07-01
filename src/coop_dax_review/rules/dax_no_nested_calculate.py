@@ -13,7 +13,7 @@ import re
 
 from coop_dax_review.finding import Finding
 from coop_dax_review.rules.base import Rule, RuleContext
-from coop_dax_review.rules.helpers import blank_brackets, line_at, masked
+from coop_dax_review.rules.helpers import blank_identifiers, line_at, masked
 
 _CALC_RE = re.compile(r"\bCALCULATE(?:TABLE)?\b", re.IGNORECASE)
 
@@ -21,10 +21,11 @@ _CALC_RE = re.compile(r"\bCALCULATE(?:TABLE)?\b", re.IGNORECASE)
 def _nested_offsets(text: str) -> list[int]:
     """Offsets of every ``CALCULATE`` whose paren opens inside another open
     CALCULATE's parens."""
-    # Blank bracket-reference contents (length-preserving, so offsets/lines are
+    # Blank identifier contents (length-preserving, so offsets/lines are
     # unchanged) so parentheses inside a column/measure name like ``[Net (USD)]``
-    # cannot perturb the CALCULATE-depth paren stack.
-    text = blank_brackets(text)
+    # or a quoted table name like ``'Sales (2024)'`` cannot perturb the
+    # CALCULATE-depth paren stack.
+    text = blank_identifiers(text)
     # Map each '(' that immediately follows a CALCULATE keyword to its offset.
     calc_paren: dict[int, int] = {}
     for match in _CALC_RE.finditer(text):

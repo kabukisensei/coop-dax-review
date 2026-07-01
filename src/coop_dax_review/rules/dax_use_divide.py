@@ -2,11 +2,12 @@
 
 §14: ``/`` raises or returns infinity on divide-by-zero, while ``DIVIDE()``
 returns blank (or a supplied alternate). We flag each ``/`` division operator in
-a measure. Matching is on the comment/string-masked DAX with bracket-reference
-contents also blanked, so a ``/`` inside a ``//`` line comment, a ``/* */``
-block comment, a string literal, or an identifier like ``Sales[Net/Gross]``
-never counts — only a real division operator does. One finding per occurrence,
-at the operator's line.
+a measure. Matching is on the comment/string-masked DAX with identifier
+contents (bracket refs AND single-quoted table names) also blanked, so a ``/``
+inside a ``//`` line comment, a ``/* */`` block comment, a string literal, or
+an identifier like ``Sales[Net/Gross]`` or ``'Actual/Budget'`` never counts —
+only a real division operator does. One finding per occurrence, at the
+operator's line.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import re
 
 from coop_dax_review.finding import Finding
 from coop_dax_review.rules.base import Rule, RuleContext
-from coop_dax_review.rules.helpers import blank_brackets, line_at, masked
+from coop_dax_review.rules.helpers import blank_identifiers, line_at, masked
 
 # A single '/' that is not part of '//' (defensive: masking already blanks
 # line comments, but never match a doubled slash as a division operator).
@@ -25,7 +26,7 @@ _DIVIDE_RE = re.compile(r"(?<!/)/(?!/)")
 def check(ctx: RuleContext) -> list[Finding]:
     findings: list[Finding] = []
     for measure in ctx.catalog.measures:
-        text = blank_brackets(masked(measure))
+        text = blank_identifiers(masked(measure))
         for match in _DIVIDE_RE.finditer(text):
             findings.append(
                 ctx.finding(

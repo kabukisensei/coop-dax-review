@@ -17,9 +17,11 @@ group all the files of one model and merge them into a single catalog.
 
 from __future__ import annotations
 
+import codecs
 import re
 from pathlib import Path, PurePosixPath
 
+from coop_dax_review.diagnostics import PARSE_FAILED, Diagnostic
 from coop_dax_review.model import Column, Measure, ModelCatalog, Relationship, Table
 
 # A table header line (plain or calculated). Name extraction is quote-aware
@@ -44,6 +46,23 @@ _ISACTIVE_RE = re.compile(r"^isActive\s*:\s*(\S+)")
 _PROPERTY_RE = re.compile(r"^[A-Za-z][\w]*\s*:")
 _FORMATSTRING_RE = re.compile(r"^formatString\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _FORMATSTRING_DEF_RE = re.compile(r"^formatStringDefinition\b", re.IGNORECASE)
+# The finite set of real TMDL measure properties / child objects (per the TOM
+# Measure object). The DAX-continuation loop must stop ONLY on one of these:
+# treating ANY `Word:` line as a property truncates measure bodies at the
+# standards' own §12 `/* Measure: ... Purpose: ... */` header lines, whose
+# `Purpose:` etc. match the generic property shape but are comment text.
+# Three shapes: `name: value` properties, `name = <expr>` children, and the
+# named/bare child objects (`annotation X = ...`, `kpi`).
+_MEASURE_PROP_RE = re.compile(
+    r"^(?:"
+    r"(?:formatString|displayFolder|lineageTag|sourceLineageTag|description"
+    r"|isHidden|isSimpleMeasure|dataCategory|dataType|errorMessage|state)\s*:"
+    r"|(?:formatStringDefinition|detailRowsDefinition|changedProperty)\s*="
+    r"|(?:annotation|extendedProperty)\s+\S"
+    r"|kpi\s*$"
+    r")",
+    re.IGNORECASE,
+)
 _DATE_TABLE_ANNOTATION = "__pbi_templatedatetable"
 
 
@@ -92,7 +111,10 @@ def model_root(path: str) -> tuple[str, str]:
     """(root_prefix, model_name) for a TMDL file path.
 
     ``Sales.SemanticModel/definition/tables/x.tmdl`` -> root is the
-    ``.SemanticModel`` folder, model name ``Sales``.
+    ``.SemanticModel`` folder, model name ``Sales``. A file outside a
+    recognized PBIP layout falls back to its parent directory, so all loose
+    ``.tmdl`` files in one folder form ONE model named after that folder
+    (never one phantom model per file stem).
     """
     parts = PurePosixPath(path).parts
     for index, part in enumerate(parts):
@@ -102,12 +124,65 @@ def model_root(path: str) -> tuple[str, str]:
         index = parts.index("definition")
         if index > 0:
             return "/".join(parts[:index]), parts[index - 1]
-    return (parts[0] if len(parts) > 1 else ""), PurePosixPath(path).stem
+    parent = PurePosixPath(path).parent
+    if parent.name:
+        return parent.as_posix(), parent.name
+    return "", PurePosixPath(path).stem
 
 
-def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table, int]:
+def _block_comment_open(line: str, open_before: bool) -> bool:
+    """Whether a ``/* ... */`` block comment is still open after ``line``.
+
+    Scans left to right honoring DAX lexing: a string literal can't start a
+    comment, ``//`` / ``--`` line comments consume the rest of the line, and
+    ``*/`` only closes an open block. Lets the measure scanner know that a
+    ``Word:`` line inside a §12 header comment is comment text, not a property.
+    """
+    open_now = open_before
+    i, n = 0, len(line)
+    while i < n:
+        if open_now:
+            end = line.find("*/", i)
+            if end == -1:
+                return True
+            open_now = False
+            i = end + 2
+        elif line[i] == '"':  # a string literal; `""` is the escaped quote
+            j = i + 1
+            while j < n:
+                if line[j] == '"':
+                    if line.startswith('""', j):
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = j + 1
+        elif line.startswith("//", i) or line.startswith("--", i):
+            return False  # the rest of the line is a comment
+        elif line.startswith("/*", i):
+            open_now = True
+            i += 2
+        else:
+            i += 1
+    return open_now
+
+
+def _skip_block(lines: list[str], start: int) -> int:
+    """Index of the first line past the indented block starting at ``start``."""
+    i = start + 1
+    while i < len(lines):
+        if lines[i].strip() and _indent(lines[i]) == 0:
+            break
+        i += 1
+    return i
+
+
+def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table | None, int]:
     """Parse one ``table`` block beginning at ``lines[start]``; return the
-    Table and the index of the first line past the block."""
+    Table and the index of the first line past the block. A header with no
+    extractable name (e.g. ``table =``) returns ``(None, end)`` — the caller
+    reports a parse diagnostic for THIS file and the other blocks/files still
+    parse (one bad header must never degrade the whole model)."""
     header = lines[start].strip()
     # Prefer the plain (or quoted) name; only treat it as a calculated table
     # when the name genuinely has a trailing ``= <DAX>`` (an '=' inside quotes
@@ -116,7 +191,10 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table, 
     if plain:
         name, is_calc = _unquote(plain.group(1)), False
     else:
-        name, is_calc = _unquote(_CALC_TABLE_RE.match(header).group(1)), True
+        calc = _CALC_TABLE_RE.match(header)
+        if calc is None:
+            return None, _skip_block(lines, start)
+        name, is_calc = _unquote(calc.group(1)), True
     table = Table(name=name, file=file, line=start + 1, is_calculated=is_calc)
 
     i = start + 1
@@ -288,25 +366,37 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
         inline = m.group(2)
         dax_parts: list[str] = []
         dax_line = 0
+        in_comment = False
         if inline:
             dax_parts.append(inline)
             dax_line = line_no
+            in_comment = _block_comment_open(inline, False)
         i += 1
         while i < len(lines):
             nxt = lines[i]
             inner = nxt.strip()
             # DAX continues on lines indented deeper than the `measure` keyword;
             # a line at the same/shallower indent (the next measure/column/
-            # partition) or a measure property (`formatString:`, or the
-            # `=`-introduced `formatStringDefinition` block) ends it.
-            if inner and (
-                _indent(nxt) <= indent or _PROPERTY_RE.match(inner) or _FORMATSTRING_DEF_RE.match(inner)
+            # partition) or a real measure property (the finite TMDL set —
+            # `formatString:`, the `=`-introduced `formatStringDefinition`
+            # block, ...) ends it. A line inside a still-open `/* ... */` block
+            # is always body text: the §12 header's `Purpose:` lines look like
+            # properties but are comment content.
+            if (
+                inner
+                and not in_comment
+                and (
+                    _indent(nxt) <= indent
+                    or _MEASURE_PROP_RE.match(inner)
+                    or _FORMATSTRING_DEF_RE.match(inner)
+                )
             ):
                 break
             if inner:
                 if dax_line == 0:
                     dax_line = line_offset + i + 1
                 dax_parts.append(inner)
+                in_comment = _block_comment_open(inner, in_comment)
             elif dax_parts:  # interior blank inside the body: keep for line mapping
                 dax_parts.append("")
             i += 1
@@ -365,6 +455,18 @@ def parse_tmdl_model(name: str, files: dict[str, str]) -> ModelCatalog:
             stripped = raw.strip()
             if _indent(raw) == 0 and _TABLE_HEADER_RE.match(stripped):
                 table, end = _parse_table_block(lines, i, path)
+                if table is None:  # unparseable header: skip THIS block, keep the rest
+                    catalog.diagnostics.append(
+                        Diagnostic(
+                            severity="warning",
+                            category=PARSE_FAILED,
+                            file=path,
+                            line=i + 1,
+                            message=f"could not parse table header {stripped!r} - table skipped",
+                        )
+                    )
+                    i = end
+                    continue
                 catalog.tables.append(table)
                 catalog.measures.extend(_parse_measures(lines[i:end], path, table.name, line_offset=i))
                 i = end
@@ -375,26 +477,49 @@ def parse_tmdl_model(name: str, files: dict[str, str]) -> ModelCatalog:
     return catalog
 
 
+def decode_tmdl(raw: bytes) -> str:
+    """Decode a ``.tmdl`` file's bytes, BOM-aware.
+
+    A UTF-16 BOM (either endianness — what a Windows PowerShell 5 redirect
+    produces) decodes as UTF-16; a UTF-8 BOM is stripped; everything else must
+    be valid UTF-8. Undecodable bytes raise ``UnicodeDecodeError`` so the
+    caller reports a diagnostic naming the file — decoding with
+    ``errors="replace"`` would silently parse mojibake into an EMPTY catalog
+    and certify an unscanned model as clean.
+    """
+    if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
+        return raw.decode("utf-16")
+    return raw.decode("utf-8-sig")
+
+
 def group_tmdl_files(
-    paths: list[Path], display: dict[Path, str]
-) -> tuple[dict[str, dict[str, str]], list[tuple[str, str, OSError]]]:
+    paths: list[Path], display: dict[Path, str], on_file=None
+) -> tuple[dict[tuple[str, str], dict[str, str]], list[tuple[str, str, Exception]]]:
     """Group ``.tmdl`` files by semantic model.
 
-    Returns ``(groups, unreadable)`` where ``groups`` is
-    ``{model_name: {display_path: text}}`` and ``unreadable`` lists
-    ``(model_name, display_path, error)`` for files that could not be read.
+    Returns ``(groups, unreadable)`` where ``groups`` maps a
+    ``(model_root, model_name)`` key to ``{display_path: text}`` and
+    ``unreadable`` lists ``(model_name, display_path, error)`` for files that
+    could not be read or decoded. Models are keyed by their ROOT DIRECTORY
+    (the ``*.SemanticModel`` / ``definition`` root, else the file's parent
+    folder), resolved against the filesystem — so two same-named models in
+    different folders stay distinct, and a flat folder of loose ``.tmdl``
+    files forms ONE model (named after the folder); the name is display-only.
     A single unreadable file degrades only its own model — the rest still
     parse — so one bad file never collapses a whole multi-model run.
+    ``on_file`` (optional) is ticked once per file for progress reporting.
     """
-    groups: dict[str, dict[str, str]] = {}
-    unreadable: list[tuple[str, str, OSError]] = []
+    groups: dict[tuple[str, str], dict[str, str]] = {}
+    unreadable: list[tuple[str, str, Exception]] = []
     for path in paths:
         disp = display[path]
-        _, model_name = model_root(disp)
+        root, model_name = model_root(path.resolve().as_posix())
         try:
-            text = path.read_text(encoding="utf-8-sig", errors="replace")
-        except OSError as exc:
+            text = decode_tmdl(path.read_bytes())
+        except (OSError, UnicodeDecodeError) as exc:
             unreadable.append((model_name, disp, exc))
-            continue
-        groups.setdefault(model_name, {})[disp] = text
+        else:
+            groups.setdefault((root, model_name), {})[disp] = text
+        if on_file is not None:
+            on_file(disp)
     return groups, unreadable

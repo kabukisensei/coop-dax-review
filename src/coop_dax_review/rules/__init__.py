@@ -18,7 +18,13 @@ __all__ = ["Rule", "RuleContext", "all_rules"]
 
 
 def all_rules() -> list[Rule]:
-    """Every discovered rule, sorted by id."""
+    """Every discovered rule, sorted by id.
+
+    A ``dax_*`` module that doesn't export a module-level ``RULE = Rule(...)``
+    raises instead of being silently skipped — a broken/misdeclared rule module
+    would otherwise ship a linter that quietly stops enforcing that rule on
+    every model (the exact failure mode auto-discovery risks).
+    """
     rules: list[Rule] = []
     for info in pkgutil.iter_modules(__path__, prefix=f"{__name__}."):
         short = info.name.rsplit(".", 1)[1]
@@ -26,7 +32,11 @@ def all_rules() -> list[Rule]:
             continue  # base/helpers are not rule modules
         module = importlib.import_module(info.name)
         rule = getattr(module, "RULE", None)
-        if isinstance(rule, Rule):
-            rules.append(rule)
+        if not isinstance(rule, Rule):
+            raise TypeError(
+                f"rule module {info.name} must export a module-level RULE = Rule(...); "
+                f"found {type(rule).__name__}"
+            )
+        rules.append(rule)
     rules.sort(key=lambda r: r.id)
     return rules

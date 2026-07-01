@@ -53,7 +53,9 @@ def test_group_tmdl_files_returns_unreadable_separately(tmp_path):
     p = tmp_path / "T.tmdl"
     p.write_text("table T\n", encoding="utf-8")
     groups, unreadable = group_tmdl_files([p], {p: "T.tmdl"})
-    assert "T" in {m for m in groups}
+    # One group, keyed by the file's parent directory (the loose-file model
+    # root) and named after that folder.
+    assert [name for _root, name in groups] == [tmp_path.name]
     assert unreadable == []
 
 

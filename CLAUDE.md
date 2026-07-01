@@ -18,8 +18,8 @@ opens in the browser (`--open/--no-open`, auto-gated to interactive terminals vi
 `_should_open_report`); an interactive **folder picker** (`questionary`, `_interactive_pick_paths`)
 appears when `check` is run with no paths in a TTY; and `upgrade`/`update` now **print** the install-
 appropriate command (`upgrade_command` -> `pipx upgrade …`, etc.) instead of self-applying, since a
-package manager can't replace the running tool (the `--check`/`--yes` flags and `apply_plan` call
-path were dropped). The terminal report (`--format text`) was then restyled into a **sectioned
+package manager can't replace the running tool (the `--yes` flag and `apply_plan` call path were
+dropped; `--check` — status only, stop before the command — was restored for SQL-twin parity). The terminal report (`--format text`) was then restyled into a **sectioned
 report** — banner, one section per model with `ERROR`/`WARN`/`INFO` severity badges, a `SUMMARY`
 panel — with ANSI color auto-enabled at an interactive terminal and plain ASCII when piped /
 redirected / `--no-color` / `NO_COLOR` (`report.console_lines(..., color=)`, cli `_use_color`,
@@ -128,7 +128,7 @@ coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
                       [--write-baseline <path>] [--save-ignores] [--min-severity ...]
                       [--log-file <path>] [--strict]
 coop-dax-review rules
-coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
+coop-dax-review upgrade [--check] # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
 ```
 
@@ -152,7 +152,16 @@ coop-dax-review --version
 
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.
-- Default exit **0** (advisory). `--strict` is the opt-in gate that can return non-zero.
+  TMDL models are grouped by their **root directory** (`.SemanticModel`/`definition` root, else
+  the parent folder for loose files), so same-named dev/prod models stay distinct and a flat
+  folder of `.tmdl` files is one model. An explicitly passed non-`.tmdl`/`.bim` file is called
+  out on stderr, never parsed as a phantom `.bim`.
+- Default exit **0** (advisory). `--strict` is the opt-in gate that can return non-zero — exit 2
+  when findings remain **or when zero models were checked** (a typo'd path must not pass CI as
+  clean; a zero-model run still renders every format/sink, with `models_checked: 0` and one
+  `scan_empty` diagnostic per searched root). A malformed/mis-encoded `rules.yml` (or a missing
+  explicit `--config`) is a friendly one-line usage error, exit 2 (`cli._load_rule_config` —
+  mirrors coop-sql-review).
 - `--standards` defaults to the bundled `data/standards.md` (kept byte-identical to the authored
   `docs/standards.md`); `--log-file` writes a diagnostics log.
 - The default `--format text` is a **sectioned report** (banner, one section per model with

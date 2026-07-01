@@ -274,9 +274,10 @@ def test_upgrade_alias_also_prints_command(monkeypatch):
     assert "pipx upgrade coop-dax-review" in result.output
 
 
-def test_removed_upgrade_flags_are_rejected():
-    # --check / --yes were dropped when self-apply was removed; pin that they error.
-    assert CliRunner().invoke(cli, ["upgrade", "--check"]).exit_code != 0
+def test_removed_upgrade_yes_flag_is_rejected():
+    # --yes (self-apply) was dropped for good; --check (status only) is kept
+    # for parity with coop-sql-review — see tests/test_review_fixes.py.
+    assert CliRunner().invoke(cli, ["upgrade", "--yes"]).exit_code != 0
     assert CliRunner().invoke(cli, ["update", "--yes"]).exit_code != 0
 
 

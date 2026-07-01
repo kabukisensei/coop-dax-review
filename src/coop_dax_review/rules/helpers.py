@@ -117,6 +117,29 @@ def blank_brackets(text: str) -> str:
     return _BRACKET_CONTENT_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
+# A single-quoted table identifier ('Sales (2024)', 'Plan/Actuals'). Applied
+# AFTER mask_dax, so an apostrophe inside a string literal or comment is
+# already blanked and can't start a phantom run; newlines are excluded from
+# the class because an identifier never spans lines (a stray apostrophe must
+# not blank across lines and corrupt offset->line mapping).
+_QUOTED_IDENT_RE = re.compile(r"'(?:[^'\n]|'')*'")
+
+
+def blank_quoted_identifiers(text: str) -> str:
+    """Blank single-quoted table-identifier contents (length-preserving) so a
+    ``/`` or ``(`` inside a table name like ``'Plan/Actuals'`` or
+    ``'Sales (2024)'`` can't masquerade as an operator or a function call."""
+    return _QUOTED_IDENT_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+def blank_identifiers(masked_dax: str) -> str:
+    """Blank both identifier forms — ``[...]`` refs, then single-quoted table
+    names — before scanning for operators, keywords or parens. Bracket contents
+    go first so an apostrophe inside a name like ``[O'Brien]`` can't open a
+    phantom quoted run. Length/newline-preserving, like both primitives."""
+    return blank_quoted_identifiers(blank_brackets(masked_dax))
+
+
 def masked(measure: Measure) -> str:
     """The measure's DAX with comments/strings blanked (offsets preserved)."""
     return mask_dax(measure.dax)
@@ -148,17 +171,18 @@ def iter_calls(masked_dax: str, names: frozenset[str]) -> Iterator[tuple[str, in
 
 
 def count_vars(masked_dax: str) -> int:
-    """Number of ``VAR`` keywords in already-masked DAX (bracket refs ignored)."""
-    return len(_VAR_RE.findall(blank_brackets(masked_dax)))
+    """Number of ``VAR`` keywords in already-masked DAX (identifiers ignored)."""
+    return len(_VAR_RE.findall(blank_identifiers(masked_dax)))
 
 
 def has_var_return(masked_dax: str) -> bool:
     """True if the DAX uses a ``VAR`` ... ``RETURN`` structure.
 
-    Bracket-reference contents are blanked first so a column/measure named
-    ``[VAR]`` or ``[Net RETURN]`` does not look like a VAR/RETURN keyword.
+    Identifier contents (bracket refs AND quoted table names) are blanked
+    first so a column named ``[VAR]`` or a table named ``'Var Data'`` does
+    not look like a VAR/RETURN keyword.
     """
-    text = blank_brackets(masked_dax)
+    text = blank_identifiers(masked_dax)
     return bool(_VAR_RE.search(text) and _RETURN_RE.search(text))
 
 

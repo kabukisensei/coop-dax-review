@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 import click
+import yaml
 
 from coop_dax_review import __version__
 from coop_dax_review.diagnostics import (
@@ -27,6 +28,7 @@ from coop_dax_review.diagnostics import (
     FILE_UNREADABLE,
     IGNORE_STALE,
     PARSE_FAILED,
+    SCAN_EMPTY,
     Diagnostic,
 )
 from coop_dax_review.engine import run_rules
@@ -71,16 +73,23 @@ def _display_path(path: Path) -> str:
 def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
     """Expand paths into (sorted .tmdl files, sorted .bim files).
 
-    Files are taken as-is; directories are searched recursively, skipping
-    hidden directories. Defaults to the current directory when none given.
+    Explicit files must be ``.tmdl`` / ``.bim`` — anything else is skipped
+    (``check`` calls the typo out on stderr) rather than "checked" as a
+    phantom .bim model. Directories are searched recursively, skipping hidden
+    directories. Each bucket is keyed by resolved path so a file reached via
+    two overlapping roots (``.`` plus an absolute path, a symlink) is only
+    checked once (mirrors coop-sql-review). Defaults to the current directory
+    when none given.
     """
     roots = [Path(p) for p in paths] or [Path(".")]
-    tmdl: set[Path] = set()
-    bim: set[Path] = set()
+    tmdl: dict[Path, Path] = {}
+    bim: dict[Path, Path] = {}
     bucket_for = {".tmdl": tmdl, ".bim": bim}
     for root in roots:
         if root.is_file():
-            (tmdl if root.suffix.lower() == ".tmdl" else bim).add(root)
+            bucket = bucket_for.get(root.suffix.lower())
+            if bucket is not None:
+                bucket.setdefault(root.resolve(), root)
         elif root.is_dir():
             # Walk once and match on the lower-cased suffix so an uppercase
             # extension (Model.TMDL) is found identically on every OS — rglob's
@@ -93,10 +102,10 @@ def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
                 if any(part.startswith(".") for part in rel.parts):
                     continue
                 if candidate.is_file():
-                    bucket.add(candidate)
+                    bucket.setdefault(candidate.resolve(), candidate)
     return (
-        sorted(tmdl, key=lambda p: _display_path(p)),
-        sorted(bim, key=lambda p: _display_path(p)),
+        sorted(tmdl.values(), key=lambda p: _display_path(p)),
+        sorted(bim.values(), key=lambda p: _display_path(p)),
     )
 
 
@@ -104,26 +113,45 @@ def build_catalogs(
     tmdl_files: list[Path],
     bim_files: list[Path],
     texts_out: dict[str, str] | None = None,
+    on_file=None,
 ) -> list[ModelCatalog]:
     """Parse discovered inputs into model catalogs.
 
-    TMDL files are grouped per semantic model; each ``.bim`` is its own model.
-    Unreadable files and parse failures become diagnostics on the affected
-    model, never crashes. If ``texts_out`` is given it is filled with
-    ``{display_path: raw_text}`` (so the caller can scan inline directives without
-    re-reading the files).
+    TMDL files are grouped per semantic model (keyed by the model's root
+    directory, so same-named models stay distinct); each ``.bim`` is its own
+    model. Unreadable/undecodable files and parse failures become diagnostics
+    on the affected model, never crashes. If ``texts_out`` is given it is
+    filled with ``{display_path: raw_text}`` (so the caller can scan inline
+    directives without re-reading the files). ``on_file`` (optional) is ticked
+    once per model file, for progress reporting.
     """
     catalogs: list[ModelCatalog] = []
 
     display = {p: _display_path(p) for p in tmdl_files}
-    groups, unreadable = group_tmdl_files(tmdl_files, display)
+    groups, unreadable = group_tmdl_files(tmdl_files, display, on_file=on_file)
     if texts_out is not None:
         for files in groups.values():
             texts_out.update(files)
-    for _model_name, disp, exc in unreadable:
-        catalogs.append(_unreadable_model(disp, exc))  # one bad file degrades only its model
-    for model_name in sorted(groups):
-        files = groups[model_name]
+    for model_name, disp, exc in unreadable:  # one bad file degrades only its model
+        if isinstance(exc, UnicodeDecodeError):
+            cat = ModelCatalog(name=model_name, file=disp)
+            cat.diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    category=PARSE_FAILED,
+                    file=disp,
+                    line=0,
+                    message=(
+                        f"could not decode {disp}: {exc} - the file must be UTF-8 (or UTF-16 with a BOM)"
+                    ),
+                )
+            )
+            catalogs.append(cat)
+        else:
+            catalogs.append(_unreadable_model(disp, exc))
+    for key in sorted(groups):
+        _root, model_name = key
+        files = groups[key]
         try:
             catalogs.append(parse_tmdl_model(model_name, files))
         except Exception as exc:  # malformed TMDL / unexpected shape — degrade, never crash
@@ -146,6 +174,8 @@ def build_catalogs(
             text = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             catalogs.append(_unreadable_model(disp, exc))
+            if on_file is not None:
+                on_file(disp)
             continue
         if texts_out is not None:
             texts_out[disp] = text
@@ -163,6 +193,8 @@ def build_catalogs(
                 )
             )
             catalogs.append(cat)
+        if on_file is not None:
+            on_file(disp)
     return catalogs
 
 
@@ -217,6 +249,47 @@ def _config_write_path(config_path):
     """Where to WRITE ignores: --config if given, else ./rules.yml (never the
     bundled standards directory inside the installed package)."""
     return Path(config_path) if config_path else Path.cwd() / "rules.yml"
+
+
+def _load_rule_config(path: Path) -> RuleConfig:
+    """``RuleConfig.load`` under the CLI's friendly-error contract.
+
+    rules.yml is a hand-edited file (and auto-discovered from the cwd), so any
+    problem in it — bad YAML, wrong shape, an unknown severity, a wrong encoding
+    — must become a one-line usage error (exit 2) naming the file, never a
+    traceback. A path that simply doesn't exist loads as the empty config; the
+    explicit ``--config``-typo case is rejected earlier, in ``check``.
+    (Mirrors the coop-sql-review twin.)
+    """
+    if not path.is_file():
+        return RuleConfig()
+
+    def _bad(problem: str) -> click.UsageError:
+        return click.UsageError(f"could not load config {path}: {problem}")
+
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+        if "\x00" in text:  # UTF-16 without a BOM decodes as NUL-riddled "UTF-8"
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "null byte")
+        data = yaml.safe_load(text)
+    except UnicodeDecodeError:
+        raise _bad("the file is not UTF-8 - re-save it as UTF-8 (PowerShell '>' writes UTF-16)") from None
+    except yaml.YAMLError as exc:
+        raise _bad(f"invalid YAML - {' '.join(str(exc).split())}") from exc
+    except OSError as exc:
+        raise _bad(str(exc)) from exc
+    if data is not None and not isinstance(data, dict):
+        raise _bad("the top level must be a mapping (e.g. a `rules:` section)")
+    if isinstance(data, dict) and data.get("rules") is not None and not isinstance(data["rules"], dict):
+        raise _bad("`rules:` must be a mapping of rule ids to settings, not a list")
+    try:
+        return RuleConfig.load(path)
+    except StandardsError as exc:
+        raise _bad(str(exc)) from exc
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        # Anything the shape checks above didn't anticipate (e.g. a malformed
+        # `ignore:` entry) still surfaces as the same friendly one-liner.
+        raise _bad(f"unexpected structure ({exc})") from exc
 
 
 def _write_extra_report(path, content, label):
@@ -486,8 +559,14 @@ def check(
     except StandardsError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    # An EXPLICIT --config that doesn't exist is almost always a typo — silently
+    # running with the default rules would drop the team's overrides/ignores.
+    # (With --save-ignores the flag also names the file to CREATE, so a missing
+    # file is legitimate there. Auto-discovery absence stays silent.)
+    if config_path and not Path(config_path).is_file() and not save_ignores:
+        raise click.UsageError(f"config file not found: {config_path}")
     cfg_path = _config_read_path(config_path, std_path)
-    config = RuleConfig.load(cfg_path)
+    config = _load_rule_config(cfg_path)
     rules = apply_config(all_rules(), config)
     unknown_rules = config.unknown_rule_ids({r.id for r in all_rules()})
 
@@ -502,20 +581,46 @@ def check(
     missing = [p for p in paths if not Path(p).exists()]
     for p in missing:
         click.echo(f"path not found: {p}", err=True)
+    # So is an explicit file that isn't a model: without the callout it would be
+    # "checked" as a phantom .bim and confuse models_checked.
+    unsupported = [p for p in paths if Path(p).is_file() and Path(p).suffix.lower() not in (".tmdl", ".bim")]
+    for p in unsupported:
+        click.echo(f"not a TMDL (.tmdl) or .bim model file: {p}", err=True)
 
     tmdl_files, bim_files = discover_inputs(paths)
-    if not tmdl_files and not bim_files:
-        if not missing:
-            click.echo("No TMDL (.tmdl) or .bim models found.", err=True)
-        return
+    if not tmdl_files and not bim_files and not missing and not unsupported:
+        click.echo("No TMDL (.tmdl) or .bim models found.", err=True)
+    # No early return: a zero-model scan still renders the full report in every
+    # format/sink (models_checked=0 is the machine contract's own disambiguator),
+    # with scan_empty diagnostics below making the empty scan machine-visible.
 
     # Stderr-only + TTY-gated, so it never pollutes the report (stdout) or a
     # redirected --output file — a big model folder no longer looks hung.
     progress = Progress(should_enable(quiet=False))
     progress.line(f"Checking {len(tmdl_files) + len(bim_files)} model file(s)...")
     raw_texts: dict[str, str] = {}
-    catalogs = build_catalogs(tmdl_files, bim_files, texts_out=raw_texts)
+    with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files)) as tick:
+        catalogs = build_catalogs(tmdl_files, bim_files, texts_out=raw_texts, on_file=tick)
     result = run_rules(catalogs, rules)
+    if not tmdl_files and not bim_files:
+        # One scan_empty diagnostic per searched root, so an agent (or a CI log
+        # reader) can tell a typo'd/empty path from a genuinely clean estate.
+        for root in paths or (".",):
+            if root in missing:
+                problem = "path not found"
+            elif root in unsupported:
+                problem = "not a TMDL (.tmdl) or .bim model file"
+            else:
+                problem = "no TMDL (.tmdl) or .bim models found under this path"
+            result.diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    category=SCAN_EMPTY,
+                    file=Path(root).as_posix(),
+                    line=0,
+                    message=f"{problem} - nothing was checked (is the path right?)",
+                )
+            )
     for rule_id in unknown_rules:
         result.diagnostics.append(
             Diagnostic(
@@ -635,7 +740,9 @@ def check(
     if save_ignores:
         _save_ignores_interactive(result.findings, config_path)
 
-    if strict and result.findings:
+    # --strict also fails when NOTHING was checked (models_checked == 0): a
+    # typo'd path in CI must not pass as silently clean.
+    if strict and (result.findings or result.models_checked == 0):
         sys.exit(2)
 
 
@@ -669,13 +776,14 @@ def rules_cmd(fmt: str) -> None:
         click.echo(f"  {r.id:28} [{tag:7}] T{r.tier} {r.standard_ref:5} {r.title}{off}")
 
 
-def _run_upgrade() -> None:
+def _run_upgrade(check_only: bool) -> None:
     """Report version + dependency freshness, then print the exact command to run.
 
     The ONLY networked command (PyPI / `git fetch`). It never self-updates: a
     package manager can't reliably replace a program that is currently running
     (on Windows the console-script .exe is locked), so we show the command for
-    the user to run in a fresh terminal after exiting.
+    the user to run in a fresh terminal after exiting. ``--check`` stops after
+    the freshness report (status only — mirrors the coop-sql-review twin).
     """
     from coop_dax_review.upgrade import build_plan, upgrade_command
 
@@ -692,26 +800,46 @@ def _run_upgrade() -> None:
                 "unknown": "could not check (offline?)",
             }[dep.kind]
             click.echo(f"  {dep.name:20} {dep.installed:12} {label}")
+    if check_only:
+        return
     commands = upgrade_command(plan)
     click.echo("\nThis tool does not update itself. To update, exit coop-dax-review and run:\n")
     for command in commands:
         click.echo(f"    {shlex.join(command)}")
 
 
+_UPGRADE_OPTIONS = [
+    click.option(
+        "--check",
+        "check_only",
+        is_flag=True,
+        help="Only report whether an update is available; don't print the upgrade command.",
+    ),
+]
+
+
+def _with_upgrade_options(func):
+    for option in reversed(_UPGRADE_OPTIONS):
+        func = option(func)
+    return func
+
+
 @cli.command()
-def upgrade() -> None:
+@_with_upgrade_options
+def upgrade(check_only: bool) -> None:
     """Show how to update coop-dax-review (and check dependency freshness).
 
     The ONLY command that uses the network. Prints the exact command to run —
     the tool never replaces itself while running.
     """
-    _run_upgrade()
+    _run_upgrade(check_only)
 
 
 @cli.command()
-def update() -> None:
+@_with_upgrade_options
+def update(check_only: bool) -> None:
     """Alias for `upgrade` — show how to update coop-dax-review."""
-    _run_upgrade()
+    _run_upgrade(check_only)
 
 
 @cli.command(name="help")
