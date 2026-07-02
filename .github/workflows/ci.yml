@@ -26,6 +26,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+      - name: Bundled standards byte-identical to docs/standards.md
+        shell: bash
+        run: cmp docs/standards.md src/coop_dax_review/data/standards.md
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}

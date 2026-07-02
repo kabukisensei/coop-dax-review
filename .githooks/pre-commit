@@ -1,0 +1,8 @@
+#!/bin/sh
+# pre-commit: version single-source + standards byte-identity — the same two
+# validations as `make release-check`, kept fast (<1s, no network, no venv).
+#
+# Activate once per clone:   git config core.hooksPath .githooks
+# On failure: fix what it reports. Never bypass with `git commit --no-verify` —
+# the drift will fail CI and block the next release anyway.
+exec sh "$(git rev-parse --show-toplevel)/scripts/release-check.sh"

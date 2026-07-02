@@ -192,4 +192,5 @@ verdict + coverage signal; each finding's `fingerprint` is a stable id for track
 - `SPEC.md` — architecture, CLI, agent contract, milestones.
 - `RULES.md` — every standard mapped to a concrete check (deterministic vs agent-judgment).
 - `docs/standards.md` — the canonical DAX standards the linter checks against (bundled as package data).
-- `CLAUDE.md` — orientation for Claude Code sessions in this repo.
+- `AGENTS.md` — orientation for coding agents (and humans) working in this repo; `CLAUDE.md`
+  imports it.
