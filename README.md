@@ -17,10 +17,11 @@ pipx install coop-dax-review        # from PyPI
 ```
 
 Use `pipx`, not system `pip`, so the tool stays isolated from other CLIs (`ms-fabric-cli`,
-`azure-cli`) it might otherwise fight over shared pins. For local development:
+`azure-cli`) it might otherwise fight over shared pins. For local development (Python 3.10–3.13;
+avoid 3.14 — its venvs mis-handle editable installs):
 
 ```sh
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
 ```
 
 ## Usage

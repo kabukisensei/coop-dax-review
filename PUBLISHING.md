@@ -54,6 +54,16 @@ The repo's `.github/workflows/publish.yml` already requests the right permission
 
 A release is triggered by pushing a **version tag** that starts with `v`.
 
+> **Agents — hard guardrails.** The tag push in step 2 publishes to PyPI immediately. Only cut a
+> release when Aaron has explicitly asked for one **naming the version** in the current
+> conversation. Never infer a release from a clean working tree, a version bump you notice, or
+> green CI (real incident 2026-07-02: a spurious empty release was tagged off a "clean tree"
+> signal while another agent shared the tree). Never move, delete, or reuse an existing `v*` tag.
+> Suite ordering: `coop-review-core` is released **first** (this repo pins
+> `coop-review-core>=...`), and a suite release is **not done** until the `coop-website` repo is
+> synced + pushed — `versions.json` first, then both of its check scripts `PASS` (procedure:
+> coop-website's `AGENTS.md`, "Release-time procedure").
+
 1. **Bump the version in one place** — the version is single-sourced:
    - `src/coop_dax_review/__init__.py` → `__version__ = "0.1.1"`
 
@@ -72,6 +82,13 @@ A release is triggered by pushing a **version tag** that starts with `v`.
    (`coop-dax-review --version`), and publishes to PyPI. Watch the **Actions** tab. Within a couple
    of minutes the new version is live at https://pypi.org/project/coop-dax-review/.
 
+4. **Verify — both must be true before calling the release done:**
+   - the `Publish to PyPI` workflow run shows a green check on the Actions tab
+     (`gh run list --workflow=publish.yml --limit 1` shows `completed  success`);
+   - `python -m pip index versions coop-dax-review` lists the new version (or the PyPI page
+     shows it). If the workflow failed, **do not delete or re-push the tag** — fix the cause,
+     bump to the next patch version, and release that instead.
+
 > **PyPI version numbers are permanent** — you can't re-upload or reuse a number (even after
 > deleting it). If a release is bad, bump to the next number and publish again.
 
@@ -80,10 +97,10 @@ A release is triggered by pushing a **version tag** that starts with `v`.
 ## Before any release — green locally (CI enforces the same)
 
 ```
-$ ruff check src tests
-$ ruff format --check src tests
-$ pytest
-$ python -m build && twine check dist/*    # optional: validate the artifacts + README rendering
+$ make lint             # = .venv/bin/python -m ruff check src tests  +  ruff format --check src tests
+$ make test             # = .venv/bin/python -m pytest -q  (expect all tests passing)
+$ make release-check    # must print `release-check: OK`
+$ make build            # optional: validate the artifacts build cleanly
 ```
 
 > Dev note: in some local venvs the editable `coop-dax-review` console script can intermittently

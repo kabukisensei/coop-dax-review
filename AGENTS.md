@@ -34,10 +34,26 @@ is live on PyPI via the `v*`-tag trusted-publishing workflow.) Any further
 byte-identical (see "Standards-file invariant" below). Background reading: `SPEC.md`, `RULES.md`,
 `docs/standards.md`.
 
+## Environment
+
+- Works fully headless on Linux (and macOS/Windows) — no GUI needed; browser-opening and the
+  folder picker auto-disable off-TTY, and only `upgrade` touches the network.
+- Python: create the venv with **Python 3.13** (3.10–3.13 supported; **avoid 3.14** — its venvs
+  don't process editable-install `.pth` files, so imports/console scripts fail). `make setup`
+  uses whatever `python3` resolves to; if `python3 --version` prints 3.14+, rebuild explicitly:
+  `rm -rf .venv && python3.13 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"`,
+  then verify with `make test` (expect all tests passing).
+- Before starting any work: `git fetch && git pull --ff-only`. If the pull fails, or
+  `git status --porcelain` prints changes you didn't make yourself, **stop and report** — never
+  stash, reset, or commit around them (another agent or human may share this tree).
+- Secrets: **none in this repo and none needed** — PyPI publishing is tokenless trusted
+  publishing (GitHub OIDC), and the tool itself is offline.
+
 **Dev-env gotchas:**
 
-- In this homebrew-Python 3.14 venv the hatchling editable install's `.pth` is processed
-  unreliably, so the `coop-dax-review` console script intermittently `ModuleNotFoundError`s. For
+- On a Python 3.14 venv (as the repo's old Homebrew setup had) the hatchling editable install's
+  `.pth` is processed unreliably, so the `coop-dax-review` console script intermittently
+  `ModuleNotFoundError`s. For
   reliable local CLI runs use `PYTHONPATH=src .venv/bin/python -m coop_dax_review ...` (a clean
   `pip uninstall -y coop-dax-review && pip install -e .` also restores the script). Tests are
   unaffected (`conftest.py` puts `src` on the path); shipped installs (pipx/pip from PyPI) are too.
@@ -74,10 +90,25 @@ PYTHONPATH=src .venv/bin/python -m coop_dax_review rules                # list e
 Verify after any code change: `make test` (expect `... passed` and exit 0) and `make lint`
 (expect no output from `ruff check`, `N files already formatted` from `ruff format --check`).
 
-Release = run `make release-check` (must print `release-check: OK`), bump `__version__` in
-`src/coop_dax_review/__init__.py` (the single source; `pyproject.toml` derives it via hatchling
-dynamic versioning), then tag `vX.Y.Z` (publish.yml does the rest via PyPI trusted publishing —
-it refuses the release if the tag and `__version__` disagree).
+Release — only when Aaron explicitly asked for one **naming the version** in the current
+conversation (the tag push publishes to PyPI immediately). Steps, in order:
+
+1. Bump `__version__` in `src/coop_dax_review/__init__.py` (the single source; `pyproject.toml`
+   derives it via hatchling dynamic versioning) and add the `## [X.Y.Z]` entry to `CHANGELOG.md`.
+2. `make release-check` — must print `release-check: OK`.
+3. Commit and push the bump, then `git tag vX.Y.Z && git push origin vX.Y.Z` — publish.yml does
+   the rest via PyPI trusted publishing (it refuses the release if the tag and `__version__`
+   disagree).
+4. Verify: the `Publish to PyPI` workflow run is green (repo → Actions tab) and
+   `python -m pip index versions coop-dax-review` (networked) lists X.Y.Z.
+
+Guardrails: never infer a release from a clean working tree, a version bump you notice, or green
+CI — real incident (2026-07-02): an agent cut a spurious empty release off a "clean tree" signal
+while another agent shared the same tree. Never move, delete, or reuse an existing `v*` tag (PyPI
+refuses re-uploads; a botched release means the next patch number). Suite ordering: release
+`coop-review-core` **first** (this repo pins `coop-review-core>=...`), and a suite release is
+**not done** until the `coop-website` repo is synced + pushed — `versions.json` first, then both
+of its check scripts `PASS` (procedure: coop-website's `AGENTS.md`, "Release-time procedure").
 
 ## Git hooks
 
@@ -96,10 +127,13 @@ files or breaks the version gate will fail CI and block the next release anyway.
 ## Testing against local coop-review-core
 
 This tool's `.venv` holds a **non-editable installed copy** of the shared `coop-review-core`
-package (pyproject pins `coop-review-core>=0.2.0`), NOT an editable link to
-`~/Developer/coop-review-core`. Edits to the local core checkout are therefore **invisible** to
+package (pyproject pins `coop-review-core>=0.2.0`), NOT an editable link to the local
+`coop-review-core` checkout. Edits to the local core checkout are therefore **invisible** to
 this tool until core is re-published and reinstalled. Do not `pip install -e` the local core into
-this venv — editable installs are unreliable here (see dev-env gotchas).
+this venv — editable installs are unreliable here (see dev-env gotchas). The coop-* repos are
+assumed cloned **side by side under one parent directory** (on Aaron's Mac: `~/Developer`, which
+is what `$HOME/Developer` below means) — substitute your actual path to the sibling
+`coop-review-core` checkout if it lives elsewhere.
 
 To run this tool's tests or CLI against **local core edits**, shadow the installed copy on
 `PYTHONPATH` (local core first, then this repo's own `src`):
