@@ -61,6 +61,21 @@ class Measure:
     # (== line for an inline measure; line+ for `measure X =\n  <body>`)
     format_string: str = ""  # the measure's formatString property, "" if none
     display_folder: str = ""  # the measure's displayFolder property, "" if none
+    is_hidden: bool = False  # isHidden: true — not rendered on a visual
+    description: str = ""  # TOM description (TMDL `///` doc-comment / .bim "description")
+
+
+@dataclass
+class CalculationItem:
+    """One ``calculationItem`` in a calculation group, with its DAX expression."""
+
+    name: str
+    dax: str
+    table: str = ""  # the calculation group's table (display name)
+    file: str = ""
+    line: int = 0  # 1-based line of the `calculationItem` declaration
+    dax_line: int = 0  # 1-based line where the item's DAX body starts
+    format_string: str = ""  # a per-item formatStringExpression, if any
 
 
 @dataclass
@@ -92,6 +107,8 @@ class Table:
     storage_mode: str = ""  # "import" | "directLake" | "directQuery" | "dual" | ""
     is_date_table: bool = False  # marked Date table (dataCategory Time or template)
     is_calculated: bool = False  # a calculated table (`table X = <DAX>`)
+    expression: str = ""  # the DAX of a calculated table, if any
+    dax_line: int = 0  # 1-based line where a calculated table's DAX body starts
 
 
 @dataclass
@@ -103,6 +120,9 @@ class ModelCatalog:
     tables: list[Table] = field(default_factory=list)
     measures: list[Measure] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
+    # Calculation-group items are kept OUT of `measures` on purpose: naming rules
+    # like DAX-MEASURE-CATEGORY (§1) would misfire on item names (issue #8).
+    calculation_items: list[CalculationItem] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
     # -- lookup indexes (normalized keys) ----------------------------------

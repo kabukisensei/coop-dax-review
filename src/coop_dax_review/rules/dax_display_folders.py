@@ -4,6 +4,10 @@
 We flag a table that has more than ``_MIN_MEASURES`` measures none of which set a
 ``displayFolder``. The threshold is a configurable module constant. One finding
 per table.
+
+**Hidden** measures (``isHidden: true``) are excluded from the count: they don't
+appear in the field list, so they neither add navigation burden nor need a
+folder (issue #7 precision refinement).
 """
 
 from __future__ import annotations
@@ -22,6 +26,8 @@ _MIN_MEASURES = 5
 def check(ctx: RuleContext) -> list[Finding]:
     by_table: dict[str, list] = defaultdict(list)
     for measure in ctx.catalog.measures:
+        if measure.is_hidden:
+            continue  # hidden measures aren't in the field list — exclude from §19
         by_table[normalize(measure.table)].append(measure)
     tables = {normalize(t.name): t for t in ctx.catalog.tables}
 

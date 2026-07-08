@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from coop_dax_review.model import Column, Measure, ModelCatalog, Relationship, Table
+from coop_dax_review.model import CalculationItem, Column, Measure, ModelCatalog, Relationship, Table
 
 
 def _expression_text(expression) -> str:
@@ -67,6 +67,7 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
         if "__pbi_templatedatetable" in annotations:
             is_date = True
         first_source = (partitions[0].get("source") or {}) if partitions else {}
+        is_calc_table = isinstance(first_source, dict) and first_source.get("type") == "calculated"
         table_modes[table_name] = mode
         catalog.tables.append(
             Table(
@@ -75,7 +76,9 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
                 columns=columns,
                 storage_mode=mode,
                 is_date_table=is_date,
-                is_calculated=isinstance(first_source, dict) and first_source.get("type") == "calculated",
+                is_calculated=is_calc_table,
+                # a calculated table's DAX lives on its partition source (issue #5)
+                expression=_expression_text(first_source.get("expression")) if is_calc_table else "",
             )
         )
         for measure in table.get("measures") or []:
@@ -92,8 +95,29 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
                     file=file,
                     format_string=str(fmt),
                     display_folder=str(measure.get("displayFolder") or ""),
+                    is_hidden=bool(measure.get("isHidden")),
+                    # TOM serializes a multi-line description as an array of strings.
+                    description=_expression_text(measure.get("description")),
                 )
             )
+
+        # Calculation group items (issue #8): their DAX lives on the table's
+        # calculationGroup.calculationItems[]. Kept out of `measures` on purpose.
+        calc_group = table.get("calculationGroup")
+        if isinstance(calc_group, dict):
+            for item in calc_group.get("calculationItems") or []:
+                if not isinstance(item, dict) or not item.get("name"):
+                    continue
+                item_fmt = "<dynamic>" if item.get("formatStringExpression") else ""
+                catalog.calculation_items.append(
+                    CalculationItem(
+                        name=item["name"],
+                        dax=_expression_text(item.get("expression")),
+                        table=table_name,
+                        file=file,
+                        format_string=item_fmt,
+                    )
+                )
 
     for rel in model.get("relationships") or []:
         if not isinstance(rel, dict) or not (rel.get("fromTable") and rel.get("toTable")):

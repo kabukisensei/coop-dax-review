@@ -22,7 +22,7 @@ import re
 from pathlib import Path, PurePosixPath
 
 from coop_dax_review.diagnostics import PARSE_FAILED, Diagnostic
-from coop_dax_review.model import Column, Measure, ModelCatalog, Relationship, Table
+from coop_dax_review.model import CalculationItem, Column, Measure, ModelCatalog, Relationship, Table
 
 # A table header line (plain or calculated). Name extraction is quote-aware
 # below so an '=' inside a quoted name isn't mistaken for the calc separator.
@@ -30,6 +30,7 @@ _TABLE_HEADER_RE = re.compile(r"^table\s+\S")
 _TABLE_PLAIN_RE = re.compile(r"^table\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*$")
 _CALC_TABLE_RE = re.compile(r"^table\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$")
 _MEASURE_RE = re.compile(r"^measure\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$")
+_CALC_ITEM_RE = re.compile(r"^calculationItem\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$")
 _COLUMN_RE = re.compile(r"^column\s+('[^']*'|\"[^\"]*\"|[^=\s]+)\s*(=\s*(.*))?$")
 _DATATYPE_RE = re.compile(r"^dataType\s*:\s*(\S+)")
 _DATACATEGORY_RE = re.compile(r"^dataCategory\s*:\s*(\S+)")
@@ -198,6 +199,40 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
     table = Table(name=name, file=file, line=start + 1, is_calculated=is_calc)
 
     i = start + 1
+    # Retain a calculated table's DAX so rules can lint it (issue #5). The common
+    # form is inline (`table X = <DAX>`); the multi-line form puts the body on the
+    # indented lines above the (derived) column list — consume them so the
+    # expression is kept AND the column loop resumes past them.
+    if is_calc:
+        inline_expr = calc.group(2).strip()
+        if inline_expr:
+            table.expression = inline_expr
+            table.dax_line = start + 1
+        else:
+            dax_parts: list[str] = []
+            while i < len(lines):
+                nxt = lines[i]
+                inner = nxt.strip()
+                if not inner:
+                    if dax_parts:
+                        break
+                    i += 1
+                    continue
+                if _indent(nxt) == 0:
+                    break
+                if (
+                    _COLUMN_RE.match(inner)
+                    or _MEASURE_RE.match(inner)
+                    or _PARTITION_RE.match(inner)
+                    or _PROPERTY_RE.match(inner)
+                    or inner.lower().startswith(("hierarchy ", "annotation ", "calculationgroup"))
+                ):
+                    break
+                if table.dax_line == 0:
+                    table.dax_line = i + 1
+                dax_parts.append(inner)
+                i += 1
+            table.expression = "\n".join(dax_parts).strip()
     current_column: Column | None = None
     while i < len(lines):
         raw = lines[i]
@@ -341,6 +376,21 @@ def _parse_relationships(lines: list[str], file: str) -> list[Relationship]:
     return out
 
 
+def _doc_comment_above(lines: list[str], idx: int) -> str:
+    """The TMDL `///` description block immediately above ``lines[idx]``.
+
+    TMDL serializes an object's TOM description as one or more contiguous
+    ``/// text`` lines directly above its declaration (a blank line would
+    disassociate them). Returns the joined text (source order), or ``""``.
+    """
+    collected: list[str] = []
+    j = idx - 1
+    while j >= 0 and lines[j].strip().startswith("///"):
+        collected.append(lines[j].strip()[3:].strip())
+        j -= 1
+    return " ".join(reversed(collected)).strip()
+
+
 def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: int = 0) -> list[Measure]:
     """Extract ``measure X = <DAX>`` blocks (with continuation lines).
 
@@ -363,6 +413,7 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
         indent = _indent(raw)
         name = _unquote(m.group(1))
         line_no = line_offset + i + 1
+        description = _doc_comment_above(lines, i)
         inline = m.group(2)
         dax_parts: list[str] = []
         dax_line = 0
@@ -405,6 +456,7 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
         # formatString / displayFolder. Stops at the next object (indent <= measure).
         format_string = ""
         display_folder = ""
+        is_hidden = False
         while i < len(lines):
             nxt = lines[i]
             inner = nxt.strip()
@@ -417,6 +469,8 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
                     format_string = "<dynamic>"  # formatStringDefinition: a dynamic format
                 elif not display_folder and (df := _DISPLAYFOLDER_RE.match(inner)):
                     display_folder = _unquote(df.group(1).strip())
+                elif (hm := _ISHIDDEN_RE.match(inner)) and hm.group(1).lower() == "true":
+                    is_hidden = True
             i += 1
         out.append(
             Measure(
@@ -428,6 +482,83 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
                 dax_line=dax_line or line_no,
                 format_string=format_string,
                 display_folder=display_folder,
+                is_hidden=is_hidden,
+                description=description,
+            )
+        )
+    return out
+
+
+def _parse_calculation_items(
+    lines: list[str], file: str, table_name: str, line_offset: int = 0
+) -> list[CalculationItem]:
+    """Extract ``calculationItem Name = <DAX>`` blocks from a calculation group's
+    table slice (issue #8), mirroring the ``measure`` body-continuation rules.
+
+    Kept separate from measures because their DAX is intricate (SELECTEDMEASURE
+    transforms, time-intel wrappers) but their NAMES aren't measure names — so
+    naming rules must never see them. A per-item ``formatStringDefinition`` (a
+    dynamic format) is recorded as ``"<dynamic>"``.
+    """
+    out: list[CalculationItem] = []
+    i = 0
+    while i < len(lines):
+        raw = lines[i]
+        m = _CALC_ITEM_RE.match(raw.strip())
+        if not m:
+            i += 1
+            continue
+        indent = _indent(raw)
+        name = _unquote(m.group(1))
+        line_no = line_offset + i + 1
+        inline = m.group(2)
+        dax_parts: list[str] = []
+        dax_line = 0
+        in_comment = False
+        if inline:
+            dax_parts.append(inline)
+            dax_line = line_no
+            in_comment = _block_comment_open(inline, False)
+        i += 1
+        while i < len(lines):
+            nxt = lines[i]
+            inner = nxt.strip()
+            if (
+                inner
+                and not in_comment
+                and (
+                    _indent(nxt) <= indent
+                    or _MEASURE_PROP_RE.match(inner)
+                    or _FORMATSTRING_DEF_RE.match(inner)
+                )
+            ):
+                break
+            if inner:
+                if dax_line == 0:
+                    dax_line = line_offset + i + 1
+                dax_parts.append(inner)
+                in_comment = _block_comment_open(inner, in_comment)
+            elif dax_parts:
+                dax_parts.append("")
+            i += 1
+        format_string = ""
+        while i < len(lines):
+            nxt = lines[i]
+            inner = nxt.strip()
+            if inner and _indent(nxt) <= indent:
+                break
+            if inner and not format_string and _FORMATSTRING_DEF_RE.match(inner):
+                format_string = "<dynamic>"
+            i += 1
+        out.append(
+            CalculationItem(
+                name=name,
+                dax="\n".join(dax_parts).strip(),
+                table=table_name,
+                file=file,
+                line=line_no,
+                dax_line=dax_line or line_no,
+                format_string=format_string,
             )
         )
     return out
@@ -469,6 +600,9 @@ def parse_tmdl_model(name: str, files: dict[str, str]) -> ModelCatalog:
                     continue
                 catalog.tables.append(table)
                 catalog.measures.extend(_parse_measures(lines[i:end], path, table.name, line_offset=i))
+                catalog.calculation_items.extend(
+                    _parse_calculation_items(lines[i:end], path, table.name, line_offset=i)
+                )
                 i = end
                 continue
             i += 1

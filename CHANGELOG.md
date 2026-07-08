@@ -5,6 +5,91 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [Unreleased]
+
+## [0.10.0] — 2026-07-08
+### Added
+- **DAX syntax errors are now reported as `error`-severity `syntax_error` diagnostics** (parity with
+  coop-sql-review's `syntax_error`). A cheap **structural** validation pass runs over every measure
+  body and every calculated-column expression and flags genuinely malformed DAX — the kind that
+  would import broken into Power BI — that previously passed `check` with **zero** diagnostics while
+  the text rules half-analyzed the garbage. It catches: unbalanced parentheses, unbalanced brackets,
+  an unterminated string literal, an unterminated block comment, and an empty body. All counting is
+  done on `blank_identifiers(mask_dax(dax))`, so parens/brackets/quotes inside an identifier
+  (`[Net (USD)]`, `'Sales (2024)'`), a string, or a comment are never miscounted — compliant DAX
+  (and the standards' own example measures) stays clean. This is drift **detection**, not a grammar:
+  the standards rules still run on whatever parsed. Because the diagnostic is error-severity it flips
+  the JSON `verdict` to not-clean and fails `--strict` (exit 2), so a broken measure never passes CI
+  as clean.
+- **`rules.yml` `syntax_errors:` knob** — `error` (default) | `warning` (demote but keep it visible
+  in the JSON) | `off` (drop entirely). A bare unquoted `off` (YAML 1.1 `False`) is accepted.
+- **Inline `// coop-dax-review:ignore syntax`** (also `--`) on a syntax error's line or the line
+  above silences that one occurrence; a bare / `*` wildcard covers it too. A rule-scoped ignore
+  (naming rule ids) does **not** silence a syntax error.
+- **Calculated-column and calculated-table DAX is now linted** (issue #5). Every text rule used to
+  scan measures only; a `/` division or a nested `CALCULATE` in a calculated column or table went
+  unseen, and a calculated table's DAX was parsed and then discarded. `Table.expression` is now
+  retained (TMDL inline **and** multi-line `table X =` forms, and `.bim` `partition.source`), and
+  `DAX-USE-DIVIDE` (§14) + `DAX-NO-NESTED-CALCULATE` (§3) now fire on calc-column (`Table[Column]`)
+  and calc-table (`Table`) expressions. Existing measure findings are byte-identical — no baseline
+  churn. Other rules stay measure-only pending per-§ decisions (row context inside a calc column is
+  normal, not a smell).
+- **Calculation groups are now parsed and linted** (issue #8). `calculationGroup` / `calculationItem`
+  blocks (TMDL and `.bim`) — whose DAX is often a model's most intricate (`SELECTEDMEASURE()`
+  transforms, time-intel wrappers) — were skipped entirely. Items are captured as first-class
+  `CalculationItem`s (kept **out** of `measures`, so naming rules never misfire on item names);
+  `DAX-USE-DIVIDE` (§14) and `DAX-NO-NESTED-CALCULATE` (§3) lint item DAX, and time intelligence in
+  an item now triggers `DAX-MARKED-DATE-TABLE` (§8). Models without calc groups are byte-identical.
+- **Measure `isHidden` and `description` are captured** from both parsers (issue #7 — TMDL `///`
+  doc-comment + `isHidden:`, `.bim` `isHidden`/`description`). Two precision refinements follow:
+  `DAX-FORMAT-STRING` (§15) skips hidden measures (never rendered → an explicit format buys nothing)
+  and `DAX-DISPLAY-FOLDERS` (§19) excludes hidden measures from its threshold. (`description` is
+  captured for future use; §12's header requirement is deliberately unchanged.)
+- **New rule `DAX-AUTO-DATETIME` (§21, warning)** (issue #10). Flags Power BI auto date/time
+  artifacts — the hidden `LocalDateTable_<guid>` / `DateTableTemplate_<guid>` tables the option
+  creates per date column — a deterministic signal it was left on. One finding per model. Adds a new
+  `docs/standards.md` §21 (bundled copy kept byte-identical); the rule set is now **25 rules**.
+- **Corpus crash-guard + Windows-compat test suites** (issue #4, parity with coop-sql-review).
+  `tests/test_corpus.py` runs every rule over a synthetic model that exercises all parser features
+  (multi-line measures + §12 headers, calc columns/tables, a calculation group, quoted identifiers,
+  hidden/documented measures, partitions, active/inactive + bidirectional relationships, a marked
+  Date table) and asserts **zero `rule_error` diagnostics** + expected object counts, so a rule
+  crash or a parser regression that drops objects can't ship green. `tests/test_windows.py` pins
+  CRLF==LF findings + line numbers, ASCII console chrome, and `ensure_ascii` JSON.
+### Fixed
+- **`mask_dax` now masks an unterminated trailing string or block comment all the way to
+  end-of-text.** Previously `mask_dax('IF([X] = "abc, 1, 2)')` masked nothing, leaking the string's
+  content into the text-rule scans; an unterminated `/* ...` did the same. Both now run the mask to
+  EOF (offsets and newlines still preserved), so the leaked content never reaches a rule.
+- **`--strict` and the JSON `verdict` now honor error-severity diagnostics** (parity with
+  coop-sql-review v0.6.0). A model file the tool couldn't even read (`file_unreadable`, a rule
+  crash, or a `syntax_error`) used to report `verdict.clean: true` and exit 0 under `--strict` —
+  the analytics agent read a compromised run as a clean pass. Now any error-severity diagnostic
+  makes the verdict not-clean with `highest_severity: "error"` (even with zero findings) and fails
+  `--strict` (exit 2). The happy path is unchanged (zero findings + zero diagnostics still exits 0
+  and reports clean). `schema_version` stays 2 (additive semantics on existing fields).
+- **An undecodable model file is now an error, not a warning.** A `.tmdl` with bad UTF-8 (or UTF-16
+  saved without a BOM) previously emitted a `parse_failed` **warning**, so a model whose only file
+  was mojibake still passed as clean; it now emits an error-severity `file_unreadable` (the file
+  contributed nothing, exactly like an unreadable one) — matching the SQL twin.
+- **`bracket_refs` no longer mis-anchors the table qualifier when a quoted table name contains
+  brackets.** For a (legal) name like `'Weird[Name]'[Col]`, the old `index("[")` re-scan found the
+  bracket *inside* the quoted name, so the real `[Col]` read as bare (`DAX-COLUMN-PREFIXED` could
+  false-positive on correctly-qualified code) and a phantom `[Name]` ref was attributed to a
+  nonexistent table. The qualifier now anchors to the reference bracket itself; a `[...]` inside a
+  quoted name is not surfaced as a phantom ref; and `''`-escaped names (`'O''Brien'[X]`) resolve
+  correctly.
+- **`DAX-NO-FLOAT-KEYS` (§16) now points its finding at the offending column**, not the
+  relationship declaration — the same endpoint-column location its sibling rules `DAX-HIDE-FK-COLUMNS`
+  (§17) and `DAX-KEY-SUMMARIZEBY-NONE` (§18) use, so the `file:line` lands where the `dataType` fix
+  is made. `object` and `message` are unchanged, so no baseline/ignore churn.
+### Performance
+- **Masked DAX is cached** (`mask_dax`, plus `blank_brackets`/`blank_quoted_identifiers`/
+  `blank_identifiers`). ~13 text rules re-masked the same measure body on every measure each run;
+  these pure `str`-keyed functions now memoize (`functools.lru_cache`), collapsing that to one pass
+  per distinct expression (~9.5× faster on repeated masking in a micro-benchmark). Output is
+  byte-identical — the determinism suite still passes.
+
 ## [0.9.0] — 2026-07-01
 ### Changed
 - **Suppressions now cover `agent_review` items** exactly like findings: inline

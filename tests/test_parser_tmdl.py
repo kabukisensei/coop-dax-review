@@ -44,6 +44,105 @@ def test_measures_have_correct_boundaries_and_lines():
     assert names["Sales: YTD"].line == 9  # 1-based declaration line
 
 
+def test_measure_is_hidden_and_description_captured_tmdl():
+    # issue #7: capture isHidden (property) + the `///` doc-comment description.
+    tmdl = (
+        "table T\n"
+        "\t/// Intermediate helper.\n"
+        "\t/// Not shown on visuals.\n"
+        "\tmeasure 'Sales: _Helper' = 1\n"
+        "\t\tisHidden: true\n"
+        "\tmeasure 'Sales: Revenue' = 2\n"
+    )
+    cat = parse_tmdl_model("M", {"t.tmdl": tmdl})
+    by = {m.name: m for m in cat.measures}
+    assert by["Sales: _Helper"].is_hidden is True
+    assert by["Sales: _Helper"].description == "Intermediate helper. Not shown on visuals."
+    assert by["Sales: Revenue"].is_hidden is False
+    assert by["Sales: Revenue"].description == ""  # no `///` above it
+
+
+def test_measure_is_hidden_and_description_captured_bim():
+    model = {
+        "name": "M",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [{"name": "A", "dataType": "int64"}],
+                    "measures": [
+                        {
+                            "name": "Sales: _Helper",
+                            "expression": "1",
+                            "isHidden": True,
+                            "description": ["Line one.", "Line two."],
+                        },
+                        {"name": "Sales: Revenue", "expression": "2"},
+                    ],
+                }
+            ]
+        },
+    }
+    cat = parse_bim_model("m.bim", json.dumps(model))
+    by = {m.name: m for m in cat.measures}
+    assert by["Sales: _Helper"].is_hidden is True
+    assert "Line one." in by["Sales: _Helper"].description and "Line two." in by["Sales: _Helper"].description
+    assert by["Sales: Revenue"].is_hidden is False
+
+
+def test_calculated_table_expression_inline_tmdl():
+    # issue #5: an inline `table X = <DAX>` retains its expression for linting.
+    cat = parse_tmdl_model(
+        "m", {"t.tmdl": "table Calc = FILTER(Sales, Sales[Amt] > 0)\n\tcolumn A\n\t\tdataType: int64\n"}
+    )
+    t = cat.tables[0]
+    assert t.is_calculated is True
+    assert t.expression == "FILTER(Sales, Sales[Amt] > 0)"
+    assert t.dax_line == 1
+    assert [c.name for c in t.columns] == ["A"]  # columns still parse
+
+
+def test_calculated_table_expression_multiline_tmdl():
+    # issue #5: the multi-line `table X =` form keeps the body AND still parses
+    # the (derived) column list below it.
+    tmdl = (
+        "table Summary =\n"
+        "\t\tADDCOLUMNS(\n"
+        "\t\t\tVALUES(Sales[Region]),\n"
+        '\t\t\t"Ratio", [Rev] / [Cost]\n'
+        "\t\t)\n"
+        "\tcolumn Region\n"
+        "\t\tdataType: string\n"
+    )
+    cat = parse_tmdl_model("m", {"t.tmdl": tmdl})
+    t = cat.tables[0]
+    assert t.is_calculated is True
+    assert t.expression.startswith("ADDCOLUMNS(") and "[Rev] / [Cost]" in t.expression
+    assert t.dax_line == 2
+    assert [c.name for c in t.columns] == ["Region"]
+
+
+def test_calculated_table_expression_bim():
+    model = {
+        "name": "M",
+        "model": {
+            "tables": [
+                {
+                    "name": "Calc",
+                    "columns": [{"name": "A", "dataType": "int64"}],
+                    "partitions": [
+                        {"source": {"type": "calculated", "expression": "FILTER(Sales, Sales[Amt] > 0)"}}
+                    ],
+                }
+            ]
+        },
+    }
+    cat = parse_bim_model("m.bim", json.dumps(model))
+    t = cat.tables[0]
+    assert t.is_calculated is True
+    assert t.expression == "FILTER(Sales, Sales[Amt] > 0)"
+
+
 def test_columns_calculated_and_storage_mode():
     cat = parse_tmdl_model("Sales", {"f.tmdl": TABLE_TMDL})
     table = cat.tables[0]

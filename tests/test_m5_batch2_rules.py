@@ -88,6 +88,15 @@ def test_folders_in_use_silent():
     assert _run("dax_display_folders", cat) == []
 
 
+def test_hidden_measures_excluded_from_folder_count():
+    # issue #7: hidden measures aren't in the field list, so they don't count toward
+    # the §19 threshold — 3 visible + 5 hidden must stay silent (only 3 visible).
+    visible = [Measure(name=f"V{i}", dax="1", table="Fact") for i in range(3)]
+    hidden = [Measure(name=f"H{i}", dax="1", table="Fact", is_hidden=True) for i in range(5)]
+    cat = ModelCatalog(name="M", tables=[Table(name="Fact", file="f.tmdl")], measures=visible + hidden)
+    assert _run("dax_display_folders", cat) == []
+
+
 # -- DAX-IMPLICIT-MEASURE (§20, agent) ---------------------------------------
 
 

@@ -325,7 +325,20 @@ Prefer explicit measures over drag-to-aggregate (implicit) measures. A visible n
 default summarization invites implicit aggregation instead of a defined, documented measure — hide
 such columns or set `summarizeBy: none` and add an explicit measure.
 
-## 21. References
+## 21. Disable Auto Date/Time
+
+Disable Power BI Desktop's **auto date/time** option. When it is on, Power BI silently creates one
+hidden date-hierarchy table for every date column in the model (named `LocalDateTable_<guid>`, with
+a `DateTableTemplate_<guid>` template). These auto-tables bloat the model, are not maintainable, and
+undermine the §8 marked-Date-table discipline — time intelligence should flow through the model's
+own contiguous, marked Date dimension, not per-column auto-hierarchies.
+
+The presence of a `LocalDateTable_*` or `DateTableTemplate_*` table in a published semantic model is
+a reliable, deterministic signal that auto date/time was left on. Turn the option off (File →
+Options → Data Load → Time intelligence), remove the auto-tables, and reference a single marked Date
+table (§8) for all time-intelligence calculations.
+
+## 22. References
 
 - [Microsoft Fabric Skills for GitHub Copilot](https://github.com/microsoft/skills-for-fabric) — Official Microsoft-authored Fabric skills (MIT license)
 - [Microsoft Fabric Semantic Model Authoring](https://github.com/microsoft/skills-for-fabric/tree/main/skills/semantic-model-authoring) — TMDL, DAX, deployment patterns

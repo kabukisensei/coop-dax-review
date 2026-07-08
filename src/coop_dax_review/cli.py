@@ -16,6 +16,7 @@ import logging
 import os
 import shlex
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import click
@@ -29,20 +30,24 @@ from coop_dax_review.diagnostics import (
     IGNORE_STALE,
     PARSE_FAILED,
     SCAN_EMPTY,
+    SYNTAX_ERROR,
     Diagnostic,
 )
 from coop_dax_review.engine import run_rules
 from coop_dax_review.finding import SEVERITIES
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import parse_bim_model
+from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 from coop_dax_review.parsers.tmdl import group_tmdl_files, parse_tmdl_model
 from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown
 from coop_dax_review.rules import all_rules
 from coop_dax_review.suppressions import (
     is_inline_suppressed,
+    is_syntax_ignored,
     load_baseline,
     scan_directives,
+    scan_syntax_ignores,
     write_baseline,
 )
 from coop_dax_review.standards import (
@@ -134,11 +139,16 @@ def build_catalogs(
             texts_out.update(files)
     for model_name, disp, exc in unreadable:  # one bad file degrades only its model
         if isinstance(exc, UnicodeDecodeError):
+            # An undecodable file (bad UTF-8, or UTF-16 saved without a BOM -> NUL-riddled)
+            # contributed NOTHING to the catalog, exactly like an unreadable one — so it is
+            # an error-severity file_unreadable, not a warning. Otherwise a model whose only
+            # file is mojibake would pass --strict / verdict as clean (issue #1, SQL-twin
+            # parity: coverage of that file is lost).
             cat = ModelCatalog(name=model_name, file=disp)
             cat.diagnostics.append(
                 Diagnostic(
-                    severity="warning",
-                    category=PARSE_FAILED,
+                    severity="error",
+                    category=FILE_UNREADABLE,
                     file=disp,
                     line=0,
                     message=(
@@ -251,18 +261,29 @@ def _config_write_path(config_path):
     return Path(config_path) if config_path else Path.cwd() / "rules.yml"
 
 
-def _load_rule_config(path: Path) -> RuleConfig:
-    """``RuleConfig.load`` under the CLI's friendly-error contract.
+# The rules.yml `syntax_errors:` knob values: how to treat a genuine DAX syntax
+# error (unbalanced parens/brackets, an unterminated string/comment, an empty
+# body) — report as `error` (default), keep it visible but demote to `warning`,
+# or drop it entirely (`off`). (Mirrors the coop-sql-review twin.)
+_SYNTAX_ERROR_MODES = ("error", "warning", "off")
+
+
+def _load_rule_config(path: Path) -> tuple[RuleConfig, str]:
+    """``RuleConfig.load`` (plus the ``syntax_errors`` knob) under the CLI's
+    friendly-error contract.
+
+    Returns ``(config, syntax_errors_mode)`` where the mode is one of
+    ``error``/``warning``/``off`` (default ``error``).
 
     rules.yml is a hand-edited file (and auto-discovered from the cwd), so any
-    problem in it — bad YAML, wrong shape, an unknown severity, a wrong encoding
-    — must become a one-line usage error (exit 2) naming the file, never a
-    traceback. A path that simply doesn't exist loads as the empty config; the
-    explicit ``--config``-typo case is rejected earlier, in ``check``.
-    (Mirrors the coop-sql-review twin.)
+    problem in it — bad YAML, wrong shape, an unknown severity or ``syntax_errors``
+    value, a wrong encoding — must become a one-line usage error (exit 2) naming
+    the file, never a traceback. A path that simply doesn't exist loads as the
+    empty config; the explicit ``--config``-typo case is rejected earlier, in
+    ``check``. (Mirrors the coop-sql-review twin.)
     """
     if not path.is_file():
-        return RuleConfig()
+        return RuleConfig(), "error"
 
     def _bad(problem: str) -> click.UsageError:
         return click.UsageError(f"could not load config {path}: {problem}")
@@ -282,14 +303,57 @@ def _load_rule_config(path: Path) -> RuleConfig:
         raise _bad("the top level must be a mapping (e.g. a `rules:` section)")
     if isinstance(data, dict) and data.get("rules") is not None and not isinstance(data["rules"], dict):
         raise _bad("`rules:` must be a mapping of rule ids to settings, not a list")
+    syntax_mode = "error"
+    if isinstance(data, dict) and data.get("syntax_errors") is not None:
+        raw = data["syntax_errors"]
+        # YAML 1.1 coerces a bare `off`/`no` to the boolean False (and
+        # `on`/`yes`/`true` to True), so `syntax_errors: off` arrives as False.
+        # Map the falsy form to the intended "off" mode so it works unquoted; the
+        # truthy form has no matching mode and is rejected below.
+        candidate = "off" if raw is False else str(raw).strip().lower()
+        if candidate not in _SYNTAX_ERROR_MODES:
+            raise _bad(f"`syntax_errors` must be one of {', '.join(_SYNTAX_ERROR_MODES)} (got '{raw}')")
+        syntax_mode = candidate
     try:
-        return RuleConfig.load(path)
+        return RuleConfig.load(path), syntax_mode
     except StandardsError as exc:
         raise _bad(str(exc)) from exc
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         # Anything the shape checks above didn't anticipate (e.g. a malformed
         # `ignore:` entry) still surfaces as the same friendly one-liner.
         raise _bad(f"unexpected structure ({exc})") from exc
+
+
+def _apply_syntax_error_policy(
+    diagnostics: list[Diagnostic], mode: str, texts: dict[str, str]
+) -> list[Diagnostic]:
+    """Apply the ``syntax_errors`` knob + inline ``ignore syntax`` to SYNTAX_ERROR
+    diagnostics, leaving every other diagnostic untouched.
+
+    - ``off``: drop all syntax-error diagnostics.
+    - inline ``coop-dax-review:ignore syntax`` on the error's line/line above:
+      drop that one (regardless of the knob).
+    - ``warning``: demote the rest to ``warning`` (still reported).
+    - ``error`` (default): keep as-is.
+
+    ``texts`` is the ``{display_path: raw_text}`` map filled during parsing, so an
+    inline directive is found at the exact line numbers the diagnostics carry.
+    (Mirrors the coop-sql-review twin.)
+    """
+    if mode == "error" and not any(d.category == SYNTAX_ERROR for d in diagnostics):
+        return diagnostics  # fast path: nothing to do
+    ignores = {file: scan_syntax_ignores(text) for file, text in texts.items()}
+    kept: list[Diagnostic] = []
+    for diag in diagnostics:
+        if diag.category != SYNTAX_ERROR:
+            kept.append(diag)
+            continue
+        if mode == "off" or is_syntax_ignored(diag.line, ignores.get(diag.file, set())):
+            continue
+        if mode == "warning" and diag.severity != "warning":
+            diag = replace(diag, severity="warning")
+        kept.append(diag)
+    return kept
 
 
 def _write_extra_report(path, content, label):
@@ -566,7 +630,7 @@ def check(
     if config_path and not Path(config_path).is_file() and not save_ignores:
         raise click.UsageError(f"config file not found: {config_path}")
     cfg_path = _config_read_path(config_path, std_path)
-    config = _load_rule_config(cfg_path)
+    config, syntax_mode = _load_rule_config(cfg_path)
     rules = apply_config(all_rules(), config)
     unknown_rules = config.unknown_rule_ids({r.id for r in all_rules()})
 
@@ -602,6 +666,13 @@ def check(
     with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files)) as tick:
         catalogs = build_catalogs(tmdl_files, bim_files, texts_out=raw_texts, on_file=tick)
     result = run_rules(catalogs, rules)
+    # Cheap STRUCTURAL DAX validation (unbalanced parens/brackets, an unterminated
+    # string/comment, an empty body) over every measure + calculated column —
+    # error-severity SYNTAX_ERROR diagnostics, an orthogonal pass after the rules
+    # (the rules still run on whatever parsed; this is drift DETECTION, not a
+    # gate). The `syntax_errors` knob + inline `ignore syntax` are applied below,
+    # after inline-directive filtering, mirroring the coop-sql-review twin.
+    result.diagnostics.extend(validate_dax_syntax(catalogs))
     if not tmdl_files and not bim_files:
         # One scan_empty diagnostic per searched root, so an agent (or a CI log
         # reader) can tell a typo'd/empty path from a genuinely clean estate.
@@ -642,6 +713,13 @@ def check(
     result.agent_review = [
         a for a in result.agent_review if not is_inline_suppressed(a.rule_id, a.line, inline.get(a.file, {}))
     ]
+
+    # Syntax-error diagnostics (structurally invalid DAX) obey the rules.yml
+    # `syntax_errors` knob and an inline `coop-dax-review:ignore syntax` directive
+    # on the error's line or the line above. `off` (or an inline ignore) removes
+    # the diagnostic; `warning` demotes but keeps it visible; `error` (default)
+    # leaves it — where issue #1 then flips --strict / the verdict for free.
+    result.diagnostics = _apply_syntax_error_policy(result.diagnostics, syntax_mode, raw_texts)
     # The full set of fingerprints this run produced (pre-baseline, pre-ignore) so a
     # stale ignore entry can be told from one another filter already consumed. An
     # entry matching only an agent-review item is NOT stale.
@@ -754,8 +832,12 @@ def check(
         _save_ignores_interactive(result.findings, config_path)
 
     # --strict also fails when NOTHING was checked (models_checked == 0): a
-    # typo'd path in CI must not pass as silently clean.
-    if strict and (result.findings or result.models_checked == 0):
+    # typo'd path in CI must not pass as silently clean. It ALSO fails on any
+    # remaining error-severity diagnostic (an unreadable model, a rule crash, a
+    # syntax error) — the tool's coverage is compromised, so a zero-findings run
+    # over an unreadable file must never pass CI as clean.
+    has_error_diagnostic = any(d.severity == "error" for d in result.diagnostics)
+    if strict and (result.findings or result.models_checked == 0 or has_error_diagnostic):
         sys.exit(2)
 
 

@@ -17,8 +17,9 @@ from __future__ import annotations
 import re
 
 from coop_dax_review.finding import Finding
+from coop_dax_review.parsers.dax import mask_dax
 from coop_dax_review.rules.base import Rule, RuleContext
-from coop_dax_review.rules.helpers import ITERATOR_FUNCS, blank_identifiers, line_at, masked
+from coop_dax_review.rules.helpers import ITERATOR_FUNCS, blank_identifiers, dax_targets, line_at
 
 # A function call: an identifier (dotted names like PERCENTILEX.INC allowed)
 # immediately followed by an opening paren — used to tag each '(' with its
@@ -67,14 +68,15 @@ def _nested_offsets(text: str) -> list[int]:
 
 def check(ctx: RuleContext) -> list[Finding]:
     findings: list[Finding] = []
-    for measure in ctx.catalog.measures:
-        text = masked(measure)
+    # calc columns / tables / items carry the same context-transition trap (#5/#8).
+    for target in dax_targets(ctx.catalog, calc_columns=True, calc_tables=True, calc_items=True):
+        text = mask_dax(target.dax)
         for offset in _nested_offsets(text):
             findings.append(
                 ctx.finding(
-                    object=f"[{measure.name}]",
-                    file=measure.file,
-                    line=line_at(measure, offset),
+                    object=target.object,
+                    file=target.file,
+                    line=line_at(target, offset),
                     message="nested CALCULATE — break the inner CALCULATE out into a VAR (§3).",
                 )
             )

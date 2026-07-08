@@ -27,6 +27,7 @@ storage mode); `agent` = judgment → emitted in `agent_review`. **Tier 1** = bu
 | `DAX-HIDE-FK-COLUMNS` | 17 | visible foreign-key (relationship) column | info | model | 2 |
 | `DAX-KEY-SUMMARIZEBY-NONE` | 18 | numeric key column that auto-aggregates (`summarizeBy` ≠ none) | info | model | 2 |
 | `DAX-DISPLAY-FOLDERS` | 19 | measure-heavy table with no display folders | info | model | 2 |
+| `DAX-AUTO-DATETIME` | 21 | auto date/time artifacts (`LocalDateTable_*` / `DateTableTemplate_*` tables) | warning | model | 2 |
 
 ## Agent-judgment rules — emit in `agent_review`
 

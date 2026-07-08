@@ -5,8 +5,9 @@ a model+text rule: it triggers only when the model actually uses a
 time-intelligence function — in a measure OR in a calculated column, which
 carries exactly the same requirement — and then fires once at the model level
 if no table is marked as a Date table (no column with ``dataCategory: Time`` /
-date-table template). The finding names the measures (``[Name]``) and
-calculated columns (``Table[Name]``) whose time-intel use motivated it.
+date-table template). The finding names the measures (``[Name]``), calculated
+columns (``Table[Name]``), and calculation-group items (``Group[Item]``, issue
+#8 — time-intel wrappers are a calc group's whole point) whose use motivated it.
 """
 
 from __future__ import annotations
@@ -29,6 +30,9 @@ def check(ctx: RuleContext) -> list[Finding]:
         for column in table.columns:
             if column.expression and function_names(mask_dax(column.expression)) & TIME_INTEL_FUNCS:
                 users.append(f"{table.name}[{column.name}]")
+    for item in ctx.catalog.calculation_items:
+        if item.dax and function_names(mask_dax(item.dax)) & TIME_INTEL_FUNCS:
+            users.append(f"{item.table}[{item.name}]")
     if not users:
         return []  # no time intelligence in the model -> rule does not apply
 

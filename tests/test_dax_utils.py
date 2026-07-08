@@ -60,6 +60,33 @@ def test_bracket_refs_ignores_brackets_inside_strings():
     assert [r.name for r in refs] == ["Real"]
 
 
+def test_bracket_refs_quoted_table_name_with_brackets():
+    # issue #3: a quoted table name that itself contains a bracket pair must not
+    # steal the qualifier anchor. The real [Col] ref is qualified by 'Weird[Name]',
+    # and the [Name] inside the quoted name is NOT surfaced as a phantom bare ref.
+    refs = bracket_refs(mask_dax("SUM('Weird[Name]'[Col])"))
+    assert len(refs) == 1
+    assert refs[0].name == "Col"
+    assert refs[0].table == "Weird[Name]"
+
+
+def test_bracket_refs_quoted_table_name_with_parens():
+    # pin the already-working case: parens in a quoted name don't derail anchoring.
+    refs = bracket_refs(mask_dax("SUM('Sales (2024)'[Amt])"))
+    assert len(refs) == 1
+    assert refs[0].name == "Amt"
+    assert refs[0].table == "Sales (2024)"
+
+
+def test_bracket_refs_quoted_table_name_with_doubled_quote_escape():
+    # issue #3: 'O''Brien' is the DAX form of the table O'Brien (doubled '' = one ').
+    # The qualifier must span the whole escaped name, not stop at the inner quote.
+    refs = bracket_refs(mask_dax("SUM('O''Brien'[X])"))
+    assert len(refs) == 1
+    assert refs[0].name == "X"
+    assert refs[0].table == "O'Brien"
+
+
 def test_mask_handles_backslash_terminated_string():
     # DAX has no backslash escapes; a string ending in '\' must still close.
     dax = 'M = "path C:\\" + [Real]'
@@ -88,3 +115,36 @@ def test_block_comment_delimiters_inside_strings_do_not_straddle():
     # into one giant block comment that swallows the ref between them.
     masked = mask_dax('"a /* b" & [c] & "d */ e"')
     assert [r.name for r in bracket_refs(masked)] == ["c"]
+
+
+def test_mask_unterminated_string_runs_to_end():
+    # An UNTERMINATED trailing string (no closing `"`) must be masked all the way
+    # to end-of-text — otherwise its content leaks into the text rules and the
+    # syntax checker double-counts any paren/bracket living inside it.
+    dax = 'IF([X] = "abc, 1, 2)'
+    masked = mask_dax(dax)
+    assert len(masked) == len(dax)  # offsets preserved
+    quote = dax.index('"')
+    # everything from the opening quote onward is blanked (no visible content)
+    assert masked[quote:].strip() == ""
+    assert "abc" not in masked
+    assert ")" not in masked[quote:]  # the ) swallowed by the string is gone too
+
+
+def test_mask_unterminated_block_comment_runs_to_end():
+    # An UNTERMINATED block comment (`/*` with no `*/`) must be masked to EOF, so
+    # a keyword/ref/paren after the `/*` never leaks out.
+    dax = "SUM(x) /* comment without close ... DATESYTD([D])"
+    masked = mask_dax(dax)
+    assert len(masked) == len(dax)
+    assert masked.startswith("SUM(x)")
+    star = dax.index("/*")
+    assert masked[star:].strip() == ""  # everything from /* is blanked
+    assert "DATESYTD" not in masked
+
+    # And newlines inside a multiline unterminated comment stay aligned so an
+    # offset->line mapping is still exact.
+    multi = "A +\n/* unterminated\nspanning lines"
+    masked_multi = mask_dax(multi)
+    assert masked_multi.count("\n") == multi.count("\n")
+    assert masked_multi.startswith("A +\n")

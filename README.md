@@ -127,6 +127,32 @@ See `RULES.md` for the full taxonomy. `docs/standards.md` §14–§20 are adopte
 best practices (DIVIDE, format strings, key column types, hidden FKs, key summarizeBy, display
 folders, explicit measures); `docs/standards-proposed-additions.md` is the original candidate list.
 
+## DAX syntax errors
+
+Beyond the standards rules, `check` runs a cheap **structural** validation over every measure body
+and every calculated-column expression and reports genuinely malformed DAX — the kind that would
+import broken into Power BI — as **`error`-severity `syntax_error` diagnostics**. It catches:
+unbalanced parentheses, unbalanced brackets, an unterminated string literal (`"..."` with no
+closing quote), an unterminated block comment (`/* ...` with no `*/`), and an empty measure body.
+Parens/brackets/quotes that live inside an identifier (`[Net (USD)]`), a string, or a comment are
+never counted, so compliant DAX is never flagged. This is drift **detection**, not a grammar: the
+standards rules still run on whatever parsed. Because a `syntax_error` is error-severity, it flips
+the JSON `verdict` to not-clean and fails `--strict` (exit 2) — so a broken measure never passes CI
+as clean.
+
+Tune it two ways:
+
+- **`rules.yml` knob** — `syntax_errors: error` (default) | `warning` (demote but keep it visible in
+  the JSON) | `off` (drop entirely):
+  ```yaml
+  syntax_errors: warning
+  ```
+- **Inline** — silence a single occurrence with a `syntax` (or bare `*`) ignore on the finding's
+  line or the line above it. A rule-scoped ignore does **not** cover a syntax error:
+  ```
+  // coop-dax-review:ignore syntax
+  ```
+
 ## Suppressing findings (adopting on an existing model)
 
 Three deterministic, never-blocking ways to silence findings you've already triaged. All three

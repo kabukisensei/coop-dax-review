@@ -3,13 +3,14 @@
 Canonical guide for **any** coding agent (Claude Code, the Pi agent, Hermes/Kimi, or a human)
 working in this repository. `CLAUDE.md` imports this file; do not duplicate content there.
 
-## Status: M0–M5 done + published to PyPI — 24 rules (M6 agent-wiring remaining)
+## Status: M0–M5 done + published to PyPI — 25 rules (M6 agent-wiring remaining)
 
 Scaffold, model catalog, TMDL/.bim parsers, rule engine, text/JSON renderers, standards-driven
-config, the full rule set documented in `RULES.md` (all 24 rules: the original Tier-1/2/3 + agent
+config, the full rule set documented in `RULES.md` (all 25 rules: the original Tier-1/2/3 + agent
 set plus the M5 best-practice rules §14–§20 adopted from `docs/standards-proposed-additions.md`:
 DIVIDE, format strings, key column types, hidden FKs, key summarizeBy, display folders, explicit
-measures) are implemented and tested (`coop-dax-review rules` lists all 24). The foundation was adversarially reviewed (20
+measures — plus §21 DAX-AUTO-DATETIME) are implemented and tested (`coop-dax-review rules` lists all
+25). The foundation was adversarially reviewed (20
 confirmed issues fixed) and every rule has a fires + a compliant case; precision issues found by
 per-rule verifiers are fixed and pinned in `tests/test_regressions.py` / `tests/test_m5*.py`.
 The UX surface was then brought to parity with `coop-sql-review`: `check` gained `--format

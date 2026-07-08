@@ -255,14 +255,48 @@ def test_utf16_tmdl_model_is_actually_parsed_not_silently_clean(tmp_path, data):
     assert payload["verdict"]["clean"] is False
 
 
-def test_undecodable_tmdl_reports_parse_failed_naming_the_file(tmp_path):
+def _write_undecodable_model(tmp_path):
     target = tmp_path / "B.SemanticModel" / "definition" / "tables" / "junk.tmdl"
     target.parent.mkdir(parents=True)
     target.write_bytes(b"table T\n\x93\x00\xffgarbage")  # not UTF-8, no UTF-16 BOM
-    payload = _check_json(str(tmp_path))
-    diags = [d for d in payload["diagnostics"] if d["category"] == "parse_failed"]
+    return target
+
+
+def test_undecodable_tmdl_is_error_severity_file_unreadable(tmp_path):
+    # issue #1: an undecodable file contributed NOTHING to the catalog — it is an
+    # error-severity file_unreadable (not a parse_failed warning), so a model whose
+    # only file is mojibake can't pass --strict / verdict as clean.
+    _write_undecodable_model(tmp_path)
+    payload = _check_json(str(tmp_path))  # non-strict -> still exit 0 (happy path unchanged)
+    diags = [d for d in payload["diagnostics"] if d["category"] == "file_unreadable"]
     assert diags and any("junk.tmdl" in d["file"] for d in diags)
+    assert all(d["severity"] == "error" for d in diags)
     assert payload["findings"] == []  # nothing invented from mojibake
+    # the error diagnostic makes the verdict NOT clean even with zero findings
+    assert payload["verdict"]["clean"] is False
+    assert payload["verdict"]["highest_severity"] == "error"
+
+
+def test_strict_exits_two_on_error_severity_diagnostic(tmp_path):
+    # issue #1: --strict must fail (exit 2) when an error-severity diagnostic remains,
+    # even with zero findings — an unreadable model must not pass CI as clean.
+    _write_undecodable_model(tmp_path)
+    strict = CliRunner().invoke(cli, ["check", str(tmp_path), "--strict", "--format", "json"])
+    assert strict.exit_code == 2
+    # ...but without --strict the tool stays advisory (exit 0).
+    lenient = CliRunner().invoke(cli, ["check", str(tmp_path), "--format", "json"])
+    assert lenient.exit_code == 0
+
+
+def test_strict_stays_zero_on_a_clean_model(tmp_path):
+    # happy path unchanged: zero findings + zero diagnostics still exits 0 under --strict.
+    _write(
+        tmp_path / "Clean.SemanticModel" / "definition" / "tables" / "T.tmdl",
+        "table T\n\tcolumn A\n\t\tdataType: int64\n\t\tsummarizeBy: none\n",
+    )
+    ok = CliRunner().invoke(cli, ["check", str(tmp_path), "--strict", "--format", "json"])
+    assert ok.exit_code == 0
+    assert json.loads(ok.stdout)["verdict"]["clean"] is True
 
 
 # -- dax-bim-double-count-overlapping-roots ---------------------------------------
@@ -393,12 +427,12 @@ def test_var_keyword_inside_quoted_table_name_is_not_var_return(make_catalog):
 # -- registry-silently-drops-rules-and-count-unpinned --------------------------------
 
 
-def test_registry_advertises_exactly_24_rules():
-    # CLAUDE.md: "`coop-dax-review rules` lists all 24" — bump this pin in the
-    # same commit that adds/removes a rule.
+def test_registry_advertises_exactly_25_rules():
+    # Bump this pin in the same commit that adds/removes a rule. 25 as of issue #10
+    # (added DAX-AUTO-DATETIME §21).
     rules = all_rules()
-    assert len(rules) == 24
-    assert len({r.id for r in rules}) == 24  # ids unique
+    assert len(rules) == 25
+    assert len({r.id for r in rules}) == 25  # ids unique
 
 
 def test_every_dax_module_contributes_exactly_one_rule():

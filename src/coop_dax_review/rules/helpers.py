@@ -7,12 +7,75 @@ before text scans and mapping a match offset back to a file line.
 
 from __future__ import annotations
 
+import functools
 import re
 from collections import defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from coop_dax_review.model import Measure, ModelCatalog, normalize
 from coop_dax_review.parsers.dax import mask_dax
+
+
+@dataclass(frozen=True)
+class DaxTarget:
+    """A DAX-bearing object a text rule can scan uniformly: a measure, and
+    (opt-in) a calculated column or calculated table. ``dax``/``dax_line``/
+    ``line`` mirror the fields :func:`masked` and :func:`line_at` read, so both
+    work on a target unchanged; ``object`` is the finding label."""
+
+    object: str  # "[Measure]" · "Table[Column]" · "Table"
+    dax: str
+    file: str
+    line: int
+    dax_line: int
+
+
+def dax_targets(
+    catalog: ModelCatalog,
+    *,
+    calc_columns: bool = False,
+    calc_tables: bool = False,
+    calc_items: bool = False,
+) -> Iterator[DaxTarget]:
+    """Yield the model's DAX-bearing objects for a text rule to scan.
+
+    Measures are always yielded first and IDENTICALLY to a plain
+    ``catalog.measures`` loop (same object label / dax / line), so a rule that
+    switches to this helper produces byte-identical measure findings — no
+    baseline churn. Calculated columns / tables and calculation-group items are
+    opt-in per rule (issues #5 / #8): only rules whose §-semantics clearly
+    transfer (``DAX-USE-DIVIDE`` §14, ``DAX-NO-NESTED-CALCULATE`` §3) enable them
+    today. Others stay measure-only — e.g. row-context / iterator rules, where a
+    calculated column's row context is normal, not a smell — until the standards
+    address calc-column / calc-item DAX explicitly.
+    """
+    for m in catalog.measures:
+        yield DaxTarget(f"[{m.name}]", m.dax, m.file, m.line, m.dax_line or m.line)
+    if calc_columns:
+        for table in catalog.tables:
+            for column in table.columns:
+                if column.is_calculated and column.expression.strip():
+                    yield DaxTarget(
+                        f"{table.name}[{column.name}]",
+                        column.expression,
+                        table.file,
+                        column.line,
+                        column.line,
+                    )
+    if calc_tables:
+        for table in catalog.tables:
+            if table.is_calculated and table.expression.strip():
+                yield DaxTarget(
+                    table.name, table.expression, table.file, table.line, table.dax_line or table.line
+                )
+    if calc_items:
+        for item in catalog.calculation_items:
+            if item.dax.strip():
+                yield DaxTarget(
+                    f"{item.table}[{item.name}]", item.dax, item.file, item.line, item.dax_line or item.line
+                )
+
 
 # Time-intelligence functions: their presence is what makes a marked Date
 # table required (§8). Kept lowercase for case-insensitive membership tests.
@@ -121,10 +184,12 @@ def _blank_string_literals(dax: str) -> str:
     return _STRING_OR_COMMENT_RE.sub(repl, dax)
 
 
+@functools.lru_cache(maxsize=None)
 def blank_brackets(text: str) -> str:
     """Blank ``[...]`` reference contents (length-preserving) so an identifier
     named ``[VAR]`` / ``[Net/Gross]`` can't masquerade as a keyword or operator.
-    Offsets and newlines are preserved, so a scanner's hits still map to lines."""
+    Offsets and newlines are preserved, so a scanner's hits still map to lines.
+    Cached (pure) — several rules re-blank the same masked body each run (#9)."""
     return _BRACKET_CONTENT_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
@@ -136,18 +201,22 @@ def blank_brackets(text: str) -> str:
 _QUOTED_IDENT_RE = re.compile(r"'(?:[^'\n]|'')*'")
 
 
+@functools.lru_cache(maxsize=None)
 def blank_quoted_identifiers(text: str) -> str:
     """Blank single-quoted table-identifier contents (length-preserving) so a
     ``/`` or ``(`` inside a table name like ``'Plan/Actuals'`` or
-    ``'Sales (2024)'`` can't masquerade as an operator or a function call."""
+    ``'Sales (2024)'`` can't masquerade as an operator or a function call.
+    Cached (pure) — re-blanked by several rules on the same body each run (#9)."""
     return _QUOTED_IDENT_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
+@functools.lru_cache(maxsize=None)
 def blank_identifiers(masked_dax: str) -> str:
     """Blank both identifier forms — ``[...]`` refs, then single-quoted table
     names — before scanning for operators, keywords or parens. Bracket contents
     go first so an apostrophe inside a name like ``[O'Brien]`` can't open a
-    phantom quoted run. Length/newline-preserving, like both primitives."""
+    phantom quoted run. Length/newline-preserving, like both primitives.
+    Cached (pure) — the hot path for the ~13 text rules (#9)."""
     return blank_quoted_identifiers(blank_brackets(masked_dax))
 
 
