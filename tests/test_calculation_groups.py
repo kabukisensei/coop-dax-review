@@ -84,7 +84,7 @@ def _catalog_with_item(dax: str) -> ModelCatalog:
 
 
 def test_divide_fires_on_calculation_item():
-    (f,) = _run("dax_use_divide", _catalog_with_item("SELECTEDMEASURE() / 2"))
+    (f,) = _run("dax_use_divide", _catalog_with_item("SELECTEDMEASURE() / [Base]"))
     assert f.object == "TI[It]" and f.line == 3
 
 
@@ -117,7 +117,7 @@ def test_calc_group_end_to_end_bad_item_flagged():
         "m",
         {
             "m/definition/tables/TI.tmdl": CALC_GROUP_TMDL.replace(
-                "Current = SELECTEDMEASURE()", "Bad = SELECTEDMEASURE() / 2"
+                "Current = SELECTEDMEASURE()", "Bad = SELECTEDMEASURE() / [Base]"
             )
         },
     )

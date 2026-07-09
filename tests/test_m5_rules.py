@@ -37,6 +37,41 @@ def test_slash_inside_bracketed_identifier_is_ignored(make_catalog):
     assert _run("dax_use_divide", cat) == []
 
 
+def test_division_by_nonzero_literal_is_silent(make_catalog):
+    # Issue #12: dividing by a nonzero numeric literal cannot divide by zero —
+    # the scaling idiom is standards-compliant and must not flag.
+    cat = make_catalog(
+        measures=[
+            ("Sales: Thousands", "SUM(Sales[Amount]) / 1000"),
+            ("Sales: Weeks", "[Total Days] / 7"),
+            ("Sales: Halved", "[X] / 2"),
+            ("Sales: Frac", "[X] / 0.5"),
+            ("Sales: Paren", "[X] / (100)"),
+            ("Sales: Negative", "[X] / -4"),
+        ]
+    )
+    assert _run("dax_use_divide", cat) == []
+
+
+def test_division_by_literal_zero_still_fires(make_catalog):
+    # Issue #12: a literal 0 divisor IS a guaranteed error — keep flagging.
+    cat = make_catalog(measures=[("Sales: Bad", "[X] / 0"), ("Sales: Bad2", "[X] / 0.0")])
+    assert len(_run("dax_use_divide", cat)) == 2
+
+
+def test_division_by_expression_still_fires(make_catalog):
+    # Only literal divisors are provably safe; a column/measure/expression
+    # divisor keeps flagging, including after a safe literal division.
+    cat = make_catalog(
+        measures=[
+            ("Sales: M1", "[X] / [Y]"),
+            ("Sales: M2", "[X] / 1000 / [Y]"),
+            ("Sales: M3", "[X] / (SUM(Sales[N]) + 1)"),
+        ]
+    )
+    assert len(_run("dax_use_divide", cat)) == 3
+
+
 # -- issue #5: calc columns + calc tables are linted by §14 / §3 -------------
 
 

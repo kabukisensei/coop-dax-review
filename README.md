@@ -132,7 +132,7 @@ Run `coop-dax-review rules` for the live list. Deterministic rules (reported as 
 | `DAX-MEASURE-IN-ITERATOR` | 9 | info | a measure referenced inside a row iterator (hidden context transition) |
 | `DAX-COMPLEX-NO-HEADER` | 12 | info | a complex measure (≥3 VARs) without a `/* ... */` header |
 | `DAX-DIRECTLAKE-NO-CALC-COL` | 13 | warning | a calculated column in a Direct Lake model |
-| `DAX-USE-DIVIDE` | 14 | warning | the `/` operator where `DIVIDE()` should be used |
+| `DAX-USE-DIVIDE` | 14 | warning | the `/` operator where `DIVIDE()` should be used (nonzero-literal divisors like `/ 1000` are safe and skipped) |
 | `DAX-FORMAT-STRING` | 15 | warning | a measure with no explicit `formatString` |
 | `DAX-NO-FLOAT-KEYS` | 16 | info | a relationship key column typed `double` |
 | `DAX-HIDE-FK-COLUMNS` | 17 | info | a visible foreign-key (relationship) column |

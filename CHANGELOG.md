@@ -7,6 +7,12 @@ field and are called out here.
 
 ## [Unreleased]
 ### Fixed
+- **`DAX-USE-DIVIDE` no longer flags division by a nonzero numeric literal** (issue #12). The
+  scaling idiom — `SUM(Sales[Amount]) / 1000`, `[Total Days] / 7`, a parenthesized or signed
+  literal — provably cannot divide by zero, and rewriting it as `DIVIDE()` buys nothing (DIVIDE
+  carries the alternate-result branch and is slower). A literal `0`/`0.0` divisor IS a guaranteed
+  error and still fires, as do column/measure/expression divisors. Surviving findings keep
+  byte-identical messages — no fingerprint churn.
 - **`DAX-FILTER-TABLE-IN-CALCULATE` no longer flags a `FILTER` used as an iterator's table
   argument** (issue #11). The scan is now scoped to the CALCULATE **filter arguments only**
   (top-level arguments after the first, per-argument offset rebasing — the same shape as the

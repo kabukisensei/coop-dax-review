@@ -235,7 +235,7 @@ def test_empty_discovery_still_writes_extra_sinks_and_log(tmp_path):
 
 # -- utf16-tmdl-silent-clean ------------------------------------------------------
 
-_UTF16_BODY = "table T\n\tcolumn A\n\t\tdataType: double\n\n\tmeasure 'M: R' = T[A] / 2\n"
+_UTF16_BODY = "table T\n\tcolumn A\n\t\tdataType: double\n\n\tmeasure 'M: R' = T[A] / T[A]\n"
 
 
 @pytest.mark.parametrize(
@@ -384,7 +384,7 @@ def test_unparseable_table_block_is_skipped_and_next_table_parsed():
 
 def test_unparseable_table_header_e2e_other_files_still_checked(tmp_path):
     root = tmp_path / "X.SemanticModel" / "definition" / "tables"
-    _write(root / "good.tmdl", "table T\n\tmeasure 'S: R' = T[A] / 2\n")
+    _write(root / "good.tmdl", "table T\n\tmeasure 'S: R' = T[A] / T[B]\n")
     _write(root / "weird.tmdl", "table =\n")
     payload = _check_json(str(tmp_path))
     assert any(f["rule_id"] == "DAX-USE-DIVIDE" for f in payload["findings"])  # still checked
@@ -401,7 +401,7 @@ def test_slash_in_quoted_table_name_does_not_fire_use_divide(make_catalog):
 
 
 def test_real_division_next_to_quoted_name_still_fires(make_catalog):
-    cat = make_catalog(measures=[("Plan: Ratio", "SUMX('Actual/Budget', [Amt]) / 2")])
+    cat = make_catalog(measures=[("Plan: Ratio", "SUMX('Actual/Budget', [Amt]) / [Amt]")])
     assert len(_run_rule("coop_dax_review.rules.dax_use_divide", cat)) == 1
 
 
@@ -511,7 +511,7 @@ def test_check_wires_the_core_parse_progress_bar(monkeypatch):
 
 # -- inline-suppression-no-e2e-test (coverage) -------------------------------------------
 
-_DIVIDE_MODEL = "table T\n\tcolumn A\n\t\tdataType: double\n\n\tmeasure 'M: Ratio' = T[A] / 2\n"
+_DIVIDE_MODEL = "table T\n\tcolumn A\n\t\tdataType: double\n\n\tmeasure 'M: Ratio' = T[A] / T[B]\n"
 
 
 def _model_with(tmp_path, table_text):
@@ -525,7 +525,7 @@ def test_inline_ignore_control_fires_without_directive(tmp_path):
 
 
 def test_inline_ignore_same_line_suppresses_finding_e2e(tmp_path):
-    text = _DIVIDE_MODEL.replace("/ 2\n", "/ 2  // coop-dax-review:ignore DAX-USE-DIVIDE\n")
+    text = _DIVIDE_MODEL.replace("/ T[B]\n", "/ T[B]  // coop-dax-review:ignore DAX-USE-DIVIDE\n")
     payload = _check_json(_model_with(tmp_path, text))
     assert not any(f["rule_id"] == "DAX-USE-DIVIDE" for f in payload["findings"])
     # only the targeted rule is gone; others still report

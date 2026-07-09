@@ -21,7 +21,7 @@ storage mode); `agent` = judgment → emitted in `agent_review`. **Tier 1** = bu
 | `DAX-SNOWFLAKE` | 6 | dimension related to another dimension (snowflake chain) | info | model | 2 |
 | `DAX-DIRECTLAKE-NO-CALC-COL` | 13 | calculated column in a Direct Lake model | warning | model | 2 |
 | `DAX-COMPLEX-NO-HEADER` | 12 | complex measure (≥N VARs / length) without a `/* header */` | info | text | 3 |
-| `DAX-USE-DIVIDE` | 14 | the `/` operator where `DIVIDE()` should be used | warning | text | 2 |
+| `DAX-USE-DIVIDE` | 14 | the `/` operator where `DIVIDE()` should be used (division by a **nonzero numeric literal** — `/ 1000` scaling — cannot divide by zero and is not flagged; `/ 0` still is) | warning | text | 2 |
 | `DAX-FORMAT-STRING` | 15 | measure with no explicit `formatString` | warning | catalog | 2 |
 | `DAX-NO-FLOAT-KEYS` | 16 | relationship key column typed `double` | info | model | 2 |
 | `DAX-HIDE-FK-COLUMNS` | 17 | visible foreign-key (relationship) column | info | model | 2 |
