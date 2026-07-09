@@ -350,3 +350,20 @@ coop-dax-review --version
 M0 scaffold → M1 parsing + catalog → M2 rule engine + Tier-1 rules → M3 diagnostics output →
 M4 standards-driven config → M5 Microsoft/Tabular best-practice rules → M6 package + publish + wire
 into the agent.
+
+## Working the backlog (agents)
+
+This repo's work queue is its GitHub issues labeled **`agent:ready`**:
+`gh issue list --label agent:ready --state open`. Each issue is self-contained
+(Context / Problem / Proposed fix / Acceptance criteria). Rules of engagement:
+
+- Read this file fully first; take ONE issue at a time (oldest first unless one
+  blocks another).
+- Implement to the acceptance criteria; run the full test suite + lint before
+  every commit; commit with `Fixes #N` so the issue closes on push.
+- Never push tags, release, or bump versions — Aaron releases (see the release
+  rules above).
+- An open issue WITHOUT the `agent:ready` label is waiting on a human decision —
+  leave it alone.
+- **#14 (stable fingerprints) must be implemented together with
+  coop-sql-review#16** — one coordinated family identity bump, or not at all.
