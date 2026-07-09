@@ -61,7 +61,7 @@ def dax_targets(
                         column.expression,
                         table.file,
                         column.line,
-                        column.line,
+                        column.dax_line or column.line,
                     )
     if calc_tables:
         for table in catalog.tables:

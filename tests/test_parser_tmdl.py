@@ -261,6 +261,63 @@ def test_columns_calculated_and_storage_mode():
     assert cat.storage_mode == "directLake"
 
 
+# -- issue #13: Column.dax_line — multi-line calc-column bodies map to source lines
+
+
+_MULTILINE_CALC_COL_TMDL = (
+    "table Fact\n"  # line 1
+    "\tcolumn Plain\n"  # line 2
+    "\t\tdataType: double\n"  # line 3
+    "\tcolumn Ratio =\n"  # line 4: declaration
+    "\t\tVAR d = Fact[Denominator]\n"  # line 5: DAX body starts here
+    "\t\tRETURN\n"  # line 6
+    "\t\t\tFact[Numerator] / d\n"  # line 7: the `/` operator
+    "\t\tdataType: double\n"  # line 8
+    "\tcolumn Inline = Fact[A] * 2\n"  # line 9: inline form
+)
+
+
+def test_calc_column_dax_line_recorded():
+    cat = parse_tmdl_model("M", {"f.tmdl": _MULTILINE_CALC_COL_TMDL})
+    cols = {c.name: c for c in cat.tables[0].columns}
+    assert cols["Ratio"].line == 4 and cols["Ratio"].dax_line == 5  # body below the decl
+    assert cols["Inline"].line == 9 and cols["Inline"].dax_line == 9  # inline == decl line
+    assert cols["Plain"].dax_line == 0  # a data column has no DAX body
+    assert cols["Ratio"].data_type == "double"  # trailing property still binds
+
+
+def test_multiline_calc_column_finding_points_at_operator_line():
+    # issue #13: a rule finding inside a multi-line calc-column body lands on
+    # the operator's source line, not the `column X =` declaration line.
+    from coop_dax_review.engine import run_rules
+    from coop_dax_review.rules import all_rules
+
+    cat = parse_tmdl_model("M", {"f.tmdl": _MULTILINE_CALC_COL_TMDL})
+    result = run_rules([cat], [r for r in all_rules() if r.id == "DAX-USE-DIVIDE"])
+    by_object = {f.object: f for f in result.findings}
+    assert by_object["Fact[Ratio]"].line == 7  # the `/` operator's line
+
+
+def test_multiline_calc_column_syntax_error_points_at_body_line():
+    # issue #13: a structural syntax error inside a multi-line body reports the
+    # offending body line (dax_line-based), not the declaration line.
+    from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
+
+    tmdl = (
+        "table Fact\n"  # line 1
+        "\tcolumn Bad =\n"  # line 2: declaration
+        "\t\tVAR x = 1\n"  # line 3: body starts
+        "\t\tRETURN\n"  # line 4
+        "\t\t\tSUM(Fact[A]\n"  # line 5: unbalanced paren
+        "\t\tdataType: double\n"
+    )
+    cat = parse_tmdl_model("M", {"f.tmdl": tmdl})
+    diags = validate_dax_syntax([cat])
+    assert len(diags) == 1
+    assert "Fact[Bad]" in diags[0].message
+    assert diags[0].line == 5
+
+
 def test_relationship_crossfilter_and_active():
     cat = parse_tmdl_model("Sales", {"model.tmdl": MODEL_TMDL})
     assert len(cat.relationships) == 1

@@ -288,11 +288,16 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
                 is_calculated=bool(col.group(2)),
                 expression=(col.group(3) or "").strip(),
             )
+            if current_column.expression:
+                current_column.dax_line = i + 1  # inline `column X = <DAX>`
             table.columns.append(current_column)
             i += 1
             # A calculated column whose DAX body spans the following indented
             # lines: consume them as the expression WITHOUT clearing the
             # current column, so a trailing dataType:/dataCategory: still binds.
+            # `dax_line` records where the body's first line sits (issue #13 —
+            # mirrors the measure parser) so findings/syntax errors inside a
+            # multi-line body map to the right source line.
             if current_column.is_calculated and not current_column.expression:
                 dax_parts: list[str] = []
                 while i < len(lines):
@@ -303,7 +308,11 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
                     ):
                         break
                     if inner:
+                        if current_column.dax_line == 0:
+                            current_column.dax_line = i + 1
                         dax_parts.append(inner)
+                    elif dax_parts:  # interior blank: keep for offset->line mapping
+                        dax_parts.append("")
                     i += 1
                 current_column.expression = "\n".join(dax_parts).strip()
             continue

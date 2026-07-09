@@ -7,6 +7,13 @@ field and are called out here.
 
 ## [Unreleased]
 ### Fixed
+- **Multi-line calculated-column findings and syntax errors now point at the right line**
+  (issue #13). `Column` gains `dax_line` (same semantics as `Measure.dax_line`): the TMDL parser
+  records where a multi-line calculated column's DAX body starts (and preserves interior blank
+  body lines for exact offset→line mapping, mirroring the measure parser); rule findings
+  (`helpers.dax_targets`) and structural syntax errors (`syntax_validation`) anchor to it instead
+  of the `column X =` declaration line. `.bim` columns keep `line=0` — unchanged. Fingerprints
+  exclude line numbers, so no baselines change.
 - **`DAX-USE-DIVIDE` no longer flags division by a nonzero numeric literal** (issue #12). The
   scaling idiom — `SUM(Sales[Amount]) / 1000`, `[Total Days] / 7`, a parenthesized or signed
   literal — provably cannot divide by zero, and rewriting it as `DIVIDE()` buys nothing (DIVIDE

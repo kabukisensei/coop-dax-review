@@ -46,6 +46,9 @@ class Column:
     expression: str = ""  # the DAX of a calculated column, if any
     is_hidden: bool = False  # isHidden: true
     summarize_by: str = ""  # summarizeBy value (e.g. "none", "sum"); "" = model default
+    dax_line: int = 0  # 1-based line where a calculated column's DAX body starts
+    # (== line for `column X = <DAX>` inline; line+ for the multi-line form;
+    # 0 for .bim columns and plain data columns — same semantics as Measure.dax_line)
 
 
 @dataclass

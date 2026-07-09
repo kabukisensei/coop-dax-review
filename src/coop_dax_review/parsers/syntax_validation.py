@@ -175,7 +175,7 @@ def _validate_column(column: Column, table: Table, model_file: str) -> list[Diag
     if not column.is_calculated:
         return []
     dax = column.expression or ""
-    base_line = column.line or table.line or 0
+    base_line = column.dax_line or column.line or table.line or 0
     label = f"{table.name}[{column.name}]"
     diagnostics: list[Diagnostic] = []
     if not dax.strip():
