@@ -12,11 +12,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from coop_review_core.config import (  # noqa: F401
+    DiscoveredConfig,
     RuleConfig,
     StandardsError,
     add_ignores,
     apply_config,
     default_config_path,
+    discover_config,
+    load_config_friendly,
+    parse_syntax_errors_knob,
     standards_info,
 )
 from coop_review_core.config import resolve_standards_path as _resolve

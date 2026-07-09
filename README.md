@@ -46,11 +46,15 @@ coop-dax-review --version
   `models_checked: 0` and a `scan_empty` diagnostic per searched path).
 - `--standards <path>` overrides the bundled standards (e.g. point it at a canonical company
   standards file). Its sha256 travels in the JSON so the agent knows which standards a report used.
-- A `rules.yml` (found via `--config`, else a `rules.yml` in the current directory, else beside the
-  standards file) can disable rules, override severities, and **tune thresholds** — all with no
-  rebuild. A broken `rules.yml` (bad YAML, wrong shape, a non-UTF-8 save) is a friendly one-line
-  error naming the file, and a `--config` path that doesn't exist is an error too (a typo can't
-  silently drop your overrides). For example, raise what counts as a "non-trivial" measure:
+- A config file can disable rules, override severities, and **tune thresholds** — all with no
+  rebuild. It is found, first hit wins, via: `--config`; the `COOP_DAX_REVIEW_CONFIG` environment
+  variable (point a whole CI pipeline at one config); a **`coop-dax-review.yml`** (preferred) or
+  `rules.yml` (the deprecated shared name — every coop-*-review tool reads it, so two tools in one
+  monorepo would fight over it) in the current directory **or any parent up to the repo root**;
+  else beside the standards file. A broken config (bad YAML, wrong shape, a non-UTF-8 save) is a
+  friendly one-line error naming the file, and a `--config` or env-var path that doesn't exist is
+  an error too (a typo can't silently drop your overrides). For example, raise what counts as a
+  "non-trivial" measure:
   ```yaml
   rules:
     DAX-VAR-RETURN:
@@ -176,8 +180,10 @@ so a triaged item stays silenced everywhere:
   ```
   You don't have to hand-copy fingerprints: run `check --save-ignores` and, at an interactive
   terminal, you get a checkbox of this run's findings (all unchecked — opt in to the ones you want
-  gone); the picks are appended to `rules.yml` for you, so the next run silences them. A `rules.yml`
-  in your current directory is auto-discovered with no `--config` flag, so the loop is just
+  gone); the picks are appended to the config file **this run read** (so a team config beside the
+  standards file, or one found in a parent directory, is updated in place rather than shadowed by
+  a new `./rules.yml`). A `coop-dax-review.yml` or `rules.yml` in your current directory (or any
+  parent up to the repo root) is auto-discovered with no `--config` flag, so the loop is just
   "run, `--save-ignores`, re-run". An ignore entry that no longer matches any finding (you fixed it)
   is reported as a diagnostic so the list self-cleans.
 - **Baseline (ratchet)** — record today's findings and surface only *new* ones going forward:

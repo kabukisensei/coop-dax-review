@@ -14,13 +14,23 @@ from __future__ import annotations
 
 import logging
 import os
-import shlex
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 import click
-import yaml
+
+from coop_review_core.cliutils import (
+    apply_syntax_error_policy,
+    config_write_path,
+    display_path,
+    force_utf8_console,
+    run_upgrade,
+    should_open_report,
+    stdio_interactive,
+    use_color,
+    with_upgrade_options,
+    write_extra_report,
+)
 
 from coop_dax_review import __version__
 from coop_dax_review.diagnostics import (
@@ -30,7 +40,6 @@ from coop_dax_review.diagnostics import (
     IGNORE_STALE,
     PARSE_FAILED,
     SCAN_EMPTY,
-    SYNTAX_ERROR,
     Diagnostic,
 )
 from coop_dax_review.engine import run_rules
@@ -43,12 +52,11 @@ from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown
 from coop_dax_review.rules import all_rules
 from coop_dax_review.suppressions import (
+    TOOL,
     BaselineError,
     is_inline_suppressed,
-    is_syntax_ignored,
     load_baseline,
     scan_directives,
-    scan_syntax_ignores,
     write_baseline,
 )
 from coop_dax_review.standards import (
@@ -57,6 +65,9 @@ from coop_dax_review.standards import (
     add_ignores,
     apply_config,
     default_config_path,
+    discover_config,
+    load_config_friendly,
+    parse_syntax_errors_knob,
     resolve_standards_path,
     standards_info,
 )
@@ -67,13 +78,9 @@ _SEVERITY_CHOICE = click.Choice(SEVERITIES)
 # re-openable name in the working directory (overwritten on each run).
 _DEFAULT_HTML_NAME = "coop-dax-review-report.html"
 
-
-def _display_path(path: Path) -> str:
-    """POSIX-style path, relative to cwd when possible (deterministic, OS-stable)."""
-    try:
-        return path.resolve().relative_to(Path.cwd()).as_posix()
-    except ValueError:
-        return path.resolve().as_posix()
+# This package's directory: config writes must never land inside the installed
+# package (where the bundled-standards sibling rules.yml would live).
+_PACKAGE_DIR = Path(__file__).resolve().parent
 
 
 def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
@@ -110,8 +117,8 @@ def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
                 if candidate.is_file():
                     bucket.setdefault(candidate.resolve(), candidate)
     return (
-        sorted(tmdl.values(), key=lambda p: _display_path(p)),
-        sorted(bim.values(), key=lambda p: _display_path(p)),
+        sorted(tmdl.values(), key=lambda p: display_path(p)),
+        sorted(bim.values(), key=lambda p: display_path(p)),
     )
 
 
@@ -133,7 +140,7 @@ def build_catalogs(
     """
     catalogs: list[ModelCatalog] = []
 
-    display = {p: _display_path(p) for p in tmdl_files}
+    display = {p: display_path(p) for p in tmdl_files}
     groups, unreadable = group_tmdl_files(tmdl_files, display, on_file=on_file)
     if texts_out is not None:
         for files in groups.values():
@@ -180,7 +187,7 @@ def build_catalogs(
             catalogs.append(cat)
 
     for path in bim_files:
-        disp = display.get(path) or _display_path(path)
+        disp = display.get(path) or display_path(path)
         try:
             text = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
@@ -223,149 +230,73 @@ def _unreadable_model(disp: str, exc: Exception) -> ModelCatalog:
     return cat
 
 
-def _stdio_interactive() -> bool:
+def _discover_config_path(config_path: str | None, save_ignores: bool, std_path: Path) -> Path:
+    """Which config file this run reads, via core ``discover_config`` (issue #12):
+
+    1. ``--config`` if given (a missing file is a friendly usage error — a typo
+       must not silently drop the team's overrides/ignores. With ``--save-ignores``
+       the flag also names the file to CREATE, so a missing file is legitimate
+       there and skips discovery entirely).
+    2. The ``COOP_DAX_REVIEW_CONFIG`` env var (points a whole CI pipeline at one
+       config without threading ``--config`` through every call site).
+    3. A git-style walk from the cwd up through its parents: in each directory
+       ``coop-dax-review.yml`` (the tool-named config) first, then ``rules.yml``
+       as the DEPRECATED shared fallback — so a monorepo can configure this tool
+       and coop-sql-review side by side without the two fighting over one file.
+       The walk stops at the repository root (a ``.git`` entry).
+    4. The conventional spot beside the standards file.
+
+    Discovery notes (the rules.yml deprecation nudge, a shadowed-file warning)
+    surface on stderr — core never prints.
+    """
+    if config_path and save_ignores and not Path(config_path).is_file():
+        return Path(config_path)  # the file --save-ignores will create
     try:
-        return sys.stdin.isatty() and sys.stdout.isatty()
-    except (AttributeError, ValueError):
-        return False
-
-
-def _use_color(color_flag: bool | None, output_path: str | None) -> bool:
-    """Whether to colorize the terminal report. An explicit ``--color`` /
-    ``--no-color`` wins; otherwise auto: color only when writing to an
-    interactive stdout (never to a file) and ``NO_COLOR`` is unset."""
-    if color_flag is not None:
-        return color_flag
-    if output_path or os.environ.get("NO_COLOR"):
-        return False
-    try:
-        return sys.stdout.isatty()
-    except (AttributeError, ValueError):
-        return False
-
-
-def _config_read_path(config_path, std_path):
-    """Where to READ rules.yml from: --config if given, else a rules.yml in the
-    current directory (so 'save an ignore, re-run, it is silenced' works with no
-    flags), else the conventional spot beside the standards file."""
-    if config_path:
-        return Path(config_path)
-    cwd_cfg = Path.cwd() / "rules.yml"
-    if cwd_cfg.is_file():
-        return cwd_cfg
-    return default_config_path(std_path)
-
-
-def _config_write_path(config_path):
-    """Where to WRITE ignores: --config if given, else ./rules.yml (never the
-    bundled standards directory inside the installed package)."""
-    return Path(config_path) if config_path else Path.cwd() / "rules.yml"
-
-
-# The rules.yml `syntax_errors:` knob values: how to treat a genuine DAX syntax
-# error (unbalanced parens/brackets, an unterminated string/comment, an empty
-# body) — report as `error` (default), keep it visible but demote to `warning`,
-# or drop it entirely (`off`). (Mirrors the coop-sql-review twin.)
-_SYNTAX_ERROR_MODES = ("error", "warning", "off")
+        discovered = discover_config(
+            TOOL,
+            explicit=config_path,
+            env=os.environ,
+            start=Path.cwd(),
+            bundled_default=default_config_path(std_path),
+        )
+    except StandardsError as exc:
+        raise click.UsageError(str(exc)) from exc
+    for note in discovered.notes:
+        click.echo(note, err=True)
+    return discovered.path or default_config_path(std_path)
 
 
 def _load_rule_config(path: Path) -> tuple[RuleConfig, str]:
-    """``RuleConfig.load`` (plus the ``syntax_errors`` knob) under the CLI's
-    friendly-error contract.
+    """Core ``load_config_friendly`` (plus the ``syntax_errors`` knob) under the
+    CLI's friendly-error contract.
 
     Returns ``(config, syntax_errors_mode)`` where the mode is one of
-    ``error``/``warning``/``off`` (default ``error``).
+    ``error``/``warning``/``off`` (default ``error``) — how to treat a genuine
+    DAX syntax error (unbalanced parens/brackets, an unterminated
+    string/comment, an empty body).
 
-    rules.yml is a hand-edited file (and auto-discovered from the cwd), so any
-    problem in it — bad YAML, wrong shape, an unknown severity or ``syntax_errors``
-    value, a wrong encoding — must become a one-line usage error (exit 2) naming
-    the file, never a traceback. A path that simply doesn't exist loads as the
+    rules.yml is a hand-edited file (and auto-discovered), so any problem in it
+    — bad YAML, wrong shape, an unknown severity or ``syntax_errors`` value, a
+    wrong encoding — must become a one-line usage error (exit 2) naming the
+    file, never a traceback. A path that simply doesn't exist loads as the
     empty config; the explicit ``--config``-typo case is rejected earlier, in
     ``check``. (Mirrors the coop-sql-review twin.)
     """
-    if not path.is_file():
-        return RuleConfig(), "error"
 
     def _bad(problem: str) -> click.UsageError:
         return click.UsageError(f"could not load config {path}: {problem}")
 
     try:
-        text = path.read_text(encoding="utf-8-sig")
-        if "\x00" in text:  # UTF-16 without a BOM decodes as NUL-riddled "UTF-8"
-            raise UnicodeDecodeError("utf-8", b"", 0, 1, "null byte")
-        data = yaml.safe_load(text)
-    except UnicodeDecodeError:
-        raise _bad("the file is not UTF-8 - re-save it as UTF-8 (PowerShell '>' writes UTF-16)") from None
-    except yaml.YAMLError as exc:
-        raise _bad(f"invalid YAML - {' '.join(str(exc).split())}") from exc
-    except OSError as exc:
-        raise _bad(str(exc)) from exc
-    if data is not None and not isinstance(data, dict):
-        raise _bad("the top level must be a mapping (e.g. a `rules:` section)")
-    if isinstance(data, dict) and data.get("rules") is not None and not isinstance(data["rules"], dict):
-        raise _bad("`rules:` must be a mapping of rule ids to settings, not a list")
-    syntax_mode = "error"
-    if isinstance(data, dict) and data.get("syntax_errors") is not None:
-        raw = data["syntax_errors"]
-        # YAML 1.1 coerces a bare `off`/`no` to the boolean False (and
-        # `on`/`yes`/`true` to True), so `syntax_errors: off` arrives as False.
-        # Map the falsy form to the intended "off" mode so it works unquoted; the
-        # truthy form has no matching mode and is rejected below.
-        candidate = "off" if raw is False else str(raw).strip().lower()
-        if candidate not in _SYNTAX_ERROR_MODES:
-            raise _bad(f"`syntax_errors` must be one of {', '.join(_SYNTAX_ERROR_MODES)} (got '{raw}')")
-        syntax_mode = candidate
-    try:
-        return RuleConfig.load(path), syntax_mode
+        config, data = load_config_friendly(path)
     except StandardsError as exc:
         raise _bad(str(exc)) from exc
-    except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        # Anything the shape checks above didn't anticipate (e.g. a malformed
-        # `ignore:` entry) still surfaces as the same friendly one-liner.
-        raise _bad(f"unexpected structure ({exc})") from exc
-
-
-def _apply_syntax_error_policy(
-    diagnostics: list[Diagnostic], mode: str, texts: dict[str, str]
-) -> list[Diagnostic]:
-    """Apply the ``syntax_errors`` knob + inline ``ignore syntax`` to SYNTAX_ERROR
-    diagnostics, leaving every other diagnostic untouched.
-
-    - ``off``: drop all syntax-error diagnostics.
-    - inline ``coop-dax-review:ignore syntax`` on the error's line/line above:
-      drop that one (regardless of the knob).
-    - ``warning``: demote the rest to ``warning`` (still reported).
-    - ``error`` (default): keep as-is.
-
-    ``texts`` is the ``{display_path: raw_text}`` map filled during parsing, so an
-    inline directive is found at the exact line numbers the diagnostics carry.
-    (Mirrors the coop-sql-review twin.)
-    """
-    if mode == "error" and not any(d.category == SYNTAX_ERROR for d in diagnostics):
-        return diagnostics  # fast path: nothing to do
-    ignores = {file: scan_syntax_ignores(text) for file, text in texts.items()}
-    kept: list[Diagnostic] = []
-    for diag in diagnostics:
-        if diag.category != SYNTAX_ERROR:
-            kept.append(diag)
-            continue
-        if mode == "off" or is_syntax_ignored(diag.line, ignores.get(diag.file, set())):
-            continue
-        if mode == "warning" and diag.severity != "warning":
-            diag = replace(diag, severity="warning")
-        kept.append(diag)
-    return kept
-
-
-def _write_extra_report(path, content, label):
-    """Write an extra report file (in addition to the main output) and announce
-    its path on stderr. Never opens a browser — these are scriptable sinks."""
-    target = Path(path)
-    try:
-        target.write_text(content, encoding="utf-8", newline="\n")
-    except OSError as exc:
-        raise click.ClickException(f"could not write report to {path}: {exc}") from exc
-    click.echo(f"{label} report written to {target.resolve().as_posix()}", err=True)
+    syntax_mode = "error"
+    if data.get("syntax_errors") is not None:
+        try:
+            syntax_mode = parse_syntax_errors_knob(data["syntax_errors"])
+        except StandardsError as exc:
+            raise _bad(str(exc)) from exc
+    return config, syntax_mode
 
 
 def _finding_ignore_label(f):
@@ -397,20 +328,22 @@ def _pick_findings_to_ignore(findings):
     return list(selected or [])
 
 
-def _save_ignores_interactive(findings, config_path):
+def _save_ignores_interactive(findings, config_path, cfg_path: Path):
     """Let the user pick findings from this run to append to rules.yml's ignore
-    list, so they are silenced on the next run. Interactive-terminal only."""
+    list, so they are silenced on the next run. Interactive-terminal only.
+    ``cfg_path`` is the config this run READ from, so the ignore is written back
+    to it (not a shadowing ./rules.yml) — see core ``config_write_path``."""
     if not findings:
         click.echo("Nothing to ignore: this run reported no findings.", err=True)
         return
-    if not _stdio_interactive():
+    if not stdio_interactive():
         click.echo("--save-ignores needs an interactive terminal; nothing written.", err=True)
         return
     selected = _pick_findings_to_ignore(findings)
     if not selected:
         click.echo("No findings selected; the ignore list is unchanged.", err=True)
         return
-    target = _config_write_path(config_path)
+    target = config_write_path(config_path, cfg_path, package_dir=_PACKAGE_DIR)
     try:
         added = add_ignores(target, [_finding_ignore_entry(f) for f in selected])
     except (OSError, ValueError) as exc:
@@ -420,16 +353,6 @@ def _save_ignores_interactive(findings, config_path):
         "re-run to confirm they are silenced.",
         err=True,
     )
-
-
-def _should_open_report(open_report: bool | None) -> bool:
-    """Whether to open the HTML report in a browser. An explicit ``--open`` /
-    ``--no-open`` always wins; otherwise it's automatic — open only when running
-    in an interactive terminal (so CI / piped / agent runs never pop a browser).
-    """
-    if open_report is not None:
-        return open_report
-    return _stdio_interactive()
 
 
 def _interactive_pick_paths(root: Path) -> list[Path] | None:
@@ -489,7 +412,12 @@ def cli(ctx: click.Context) -> None:
     "--standards", "standards_path", default=None, help="Path to the standards file (default: bundled)."
 )
 @click.option(
-    "--config", "config_path", default=None, help="Path to a rules.yml (default: alongside standards)."
+    "--config",
+    "config_path",
+    default=None,
+    help="Path to a config file (default: $COOP_DAX_REVIEW_CONFIG, else a "
+    "coop-dax-review.yml or rules.yml found from the current directory upward, "
+    "else alongside standards).",
 )
 @click.option(
     "--format",
@@ -613,30 +541,31 @@ def check(
         coop-dax-review check ./MyModel.SemanticModel --save-ignores   # tick to silence
         coop-dax-review check ./MyModel.SemanticModel                   # they no longer show
     \b
-      The ignore list lives in rules.yml as an `ignore:` list of fingerprints
-      (each with rule/where/note) -- editable by hand, and picked up
-      automatically when rules.yml sits in the current directory (or pass
-      --config FILE). You can also disable a whole rule in rules.yml, or drop an
-      inline `// coop-dax-review:ignore RULE-ID` comment on the finding's line.
+      The ignore list lives in the config file as an `ignore:` list of
+      fingerprints (each with rule/where/note) -- editable by hand, and picked
+      up automatically when a coop-dax-review.yml (preferred) or rules.yml
+      (deprecated shared name) sits in the current directory or any parent up
+      to the repo root (or pass --config FILE / set COOP_DAX_REVIEW_CONFIG).
+      You can also disable a whole rule there, or drop an inline
+      `// coop-dax-review:ignore RULE-ID` comment on the finding's line.
     """
     try:
         std_path = resolve_standards_path(standards_path)
     except StandardsError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    # An EXPLICIT --config that doesn't exist is almost always a typo — silently
-    # running with the default rules would drop the team's overrides/ignores.
-    # (With --save-ignores the flag also names the file to CREATE, so a missing
-    # file is legitimate there. Auto-discovery absence stays silent.)
-    if config_path and not Path(config_path).is_file() and not save_ignores:
-        raise click.UsageError(f"config file not found: {config_path}")
-    cfg_path = _config_read_path(config_path, std_path)
+    # Config discovery (core `discover_config`): --config, else the
+    # COOP_DAX_REVIEW_CONFIG env var, else coop-dax-review.yml / rules.yml on a
+    # walk from the cwd up to the repo root, else beside the standards file. An
+    # EXPLICIT --config that doesn't exist is almost always a typo — a friendly
+    # usage error (unless --save-ignores names it as the file to create).
+    cfg_path = _discover_config_path(config_path, save_ignores, std_path)
     config, syntax_mode = _load_rule_config(cfg_path)
     rules = apply_config(all_rules(), config)
     unknown_rules = config.unknown_rule_ids({r.id for r in all_rules()})
 
     # With no paths in an interactive terminal, offer a folder picker.
-    if not paths and _stdio_interactive():
+    if not paths and stdio_interactive():
         picked = _interactive_pick_paths(Path("."))
         if picked is not None:
             paths = tuple(str(p) for p in picked)
@@ -720,7 +649,7 @@ def check(
     # on the error's line or the line above. `off` (or an inline ignore) removes
     # the diagnostic; `warning` demotes but keeps it visible; `error` (default)
     # leaves it — where issue #1 then flips --strict / the verdict for free.
-    result.diagnostics = _apply_syntax_error_policy(result.diagnostics, syntax_mode, raw_texts)
+    result.diagnostics = apply_syntax_error_policy(result.diagnostics, syntax_mode, raw_texts, TOOL)
     # The full set of fingerprints this run produced (pre-baseline, pre-ignore) so a
     # stale ignore entry can be told from one another filter already consumed. An
     # entry matching only an agent-review item is NOT stale.
@@ -781,7 +710,7 @@ def check(
     result = result.filtered(min_severity)
 
     standards = standards_info(std_path)
-    use_color = fmt == "text" and _use_color(color_flag, output_path)
+    colorize = fmt == "text" and use_color(color_flag, output_path)
     if fmt == "json":
         rendered = json_text(result, version=__version__, standards=standards)
     elif fmt == "markdown":
@@ -789,7 +718,7 @@ def check(
     elif fmt == "html":
         rendered = to_html(result, version=__version__, standards=standards)
     else:
-        body = console_lines(result, version=__version__, standards=standards, color=use_color)
+        body = console_lines(result, version=__version__, standards=standards, color=colorize)
         rendered = "\n".join(body) + "\n"
 
     if fmt == "html":
@@ -804,7 +733,7 @@ def check(
         # Announce on stderr so stdout stays clean for a piped/agent read (matches
         # every other report/log announcement and coop-sql-review).
         click.echo(f"HTML report written to {resolved.as_posix()}", err=True)
-        if _should_open_report(open_report):
+        if should_open_report(fmt, open_report):
             import webbrowser
 
             try:
@@ -818,12 +747,12 @@ def check(
             raise click.ClickException(f"could not write report to {output_path}: {exc}") from exc
         click.echo(f"Report written to {output_path}", err=True)
     else:
-        click.echo(rendered, nl=False, color=use_color)
+        click.echo(rendered, nl=False, color=colorize)
 
     if html_path:
-        _write_extra_report(html_path, to_html(result, version=__version__, standards=standards), "HTML")
+        write_extra_report(html_path, to_html(result, version=__version__, standards=standards), "HTML")
     if md_path:
-        _write_extra_report(
+        write_extra_report(
             md_path, to_markdown(result, version=__version__, standards=standards) + "\n", "Markdown"
         )
 
@@ -835,7 +764,7 @@ def check(
             raise click.ClickException(f"could not write log file {log_file}: {exc}") from exc
 
     if save_ignores:
-        _save_ignores_interactive(result.findings, config_path)
+        _save_ignores_interactive(result.findings, config_path, cfg_path)
 
     # --strict also fails when NOTHING was checked (models_checked == 0): a
     # typo'd path in CI must not pass as silently clean. It ALSO fails on any
@@ -880,53 +809,20 @@ def rules_cmd(fmt: str) -> None:
 def _run_upgrade(check_only: bool) -> None:
     """Report version + dependency freshness, then print the exact command to run.
 
-    The ONLY networked command (PyPI / `git fetch`). It never self-updates: a
-    package manager can't reliably replace a program that is currently running
-    (on Windows the console-script .exe is locked), so we show the command for
-    the user to run in a fresh terminal after exiting. ``--check`` stops after
-    the freshness report (status only — mirrors the coop-sql-review twin).
+    The ONLY networked command (PyPI / `git fetch`). Core ``run_upgrade`` never
+    self-updates: a package manager can't reliably replace a program that is
+    currently running (on Windows the console-script .exe is locked), so it
+    shows the command for the user to run in a fresh terminal after exiting.
+    ``--check`` stops after the freshness report (status only — mirrors the
+    coop-sql-review twin).
     """
-    from coop_dax_review.upgrade import build_plan, upgrade_command
+    from coop_dax_review.upgrade import build_plan
 
-    plan = build_plan()
-    click.echo(f"coop-dax-review {plan.tool_installed} ({plan.install_method}) — {plan.tool_note}")
-    if plan.dependencies:
-        click.echo("\nDependencies:")
-        for dep in plan.dependencies:
-            latest = dep.latest or "?"
-            label = {
-                "current": "up to date",
-                "safe": f"update available -> {latest}",
-                "major": f"MAJOR update available -> {latest} (review before applying)",
-                "unknown": "could not check (offline?)",
-            }[dep.kind]
-            click.echo(f"  {dep.name:20} {dep.installed:12} {label}")
-    if check_only:
-        return
-    commands = upgrade_command(plan)
-    click.echo("\nThis tool does not update itself. To update, exit coop-dax-review and run:\n")
-    for command in commands:
-        click.echo(f"    {shlex.join(command)}")
-
-
-_UPGRADE_OPTIONS = [
-    click.option(
-        "--check",
-        "check_only",
-        is_flag=True,
-        help="Only report whether an update is available; don't print the upgrade command.",
-    ),
-]
-
-
-def _with_upgrade_options(func):
-    for option in reversed(_UPGRADE_OPTIONS):
-        func = option(func)
-    return func
+    run_upgrade(check_only, tool_name=TOOL, plan=build_plan())
 
 
 @cli.command()
-@_with_upgrade_options
+@with_upgrade_options
 def upgrade(check_only: bool) -> None:
     """Show how to update coop-dax-review (and check dependency freshness).
 
@@ -937,7 +833,7 @@ def upgrade(check_only: bool) -> None:
 
 
 @cli.command()
-@_with_upgrade_options
+@with_upgrade_options
 def update(check_only: bool) -> None:
     """Alias for `upgrade` — show how to update coop-dax-review."""
     _run_upgrade(check_only)
@@ -959,24 +855,9 @@ def help_cmd(ctx: click.Context, command_name: str | None) -> None:
     click.echo(command.get_help(sub_ctx))
 
 
-def _force_utf8_console() -> None:
-    """Emit UTF-8 on every platform so non-ASCII in messages (the § section
-    marks, em-dashes) never raise UnicodeEncodeError on a legacy Windows
-    console (cp1252/cp437). errors='replace' guarantees we never crash on
-    output; worst case an old console shows a replacement glyph."""
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            # newline="" disables write-time \n -> \r\n translation, so the JSON
-            # contract (and the text report) stay byte-identical (LF) across
-            # OSes even when redirected to a file on Windows.
-            stream.reconfigure(encoding="utf-8", errors="replace", newline="")
-        except (AttributeError, ValueError, OSError):
-            pass  # not a reconfigurable text stream (e.g. under test capture)
-
-
 def main() -> None:
     """Console-script entrypoint: friendly one-line errors, 130 on Ctrl-C."""
-    _force_utf8_console()
+    force_utf8_console()
     try:
         cli(obj={}, standalone_mode=False)
     except click.exceptions.Abort:

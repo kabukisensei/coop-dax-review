@@ -157,14 +157,15 @@ def test_text_report_color_flag_forces_ansi():
 
 
 def test_use_color_decision(monkeypatch):
-    from coop_dax_review.cli import _use_color
+    # The decision now lives in core cliutils; the cli imports it unchanged.
+    from coop_dax_review.cli import use_color
 
     monkeypatch.delenv("NO_COLOR", raising=False)
-    assert _use_color(True, None) is True  # explicit --color
-    assert _use_color(False, None) is False  # explicit --no-color
-    assert _use_color(None, "out.txt") is False  # writing to a file -> never color
+    assert use_color(True, None) is True  # explicit --color
+    assert use_color(False, None) is False  # explicit --no-color
+    assert use_color(None, "out.txt") is False  # writing to a file -> never color
     monkeypatch.setenv("NO_COLOR", "1")
-    assert _use_color(None, None) is False  # NO_COLOR wins in auto mode
+    assert use_color(None, None) is False  # NO_COLOR wins in auto mode
 
 
 def test_markdown_format():
@@ -282,14 +283,19 @@ def test_removed_upgrade_yes_flag_is_rejected():
 
 
 def test_should_open_report_tri_state(monkeypatch):
+    # Core's two-arg variant: the fmt gate means only --format html can open a
+    # browser; the tri-state --open/--no-open/auto behavior is unchanged.
+    from coop_review_core import cliutils
+
     from coop_dax_review import cli as climod
 
-    monkeypatch.setattr(climod, "_stdio_interactive", lambda: False)
-    assert climod._should_open_report(True) is True  # explicit --open wins
-    assert climod._should_open_report(False) is False  # explicit --no-open wins
-    assert climod._should_open_report(None) is False  # auto -> follows the (non-)tty
-    monkeypatch.setattr(climod, "_stdio_interactive", lambda: True)
-    assert climod._should_open_report(None) is True
+    monkeypatch.setattr(cliutils, "stdio_interactive", lambda: False)
+    assert climod.should_open_report("html", True) is True  # explicit --open wins
+    assert climod.should_open_report("html", False) is False  # explicit --no-open wins
+    assert climod.should_open_report("html", None) is False  # auto -> follows the (non-)tty
+    assert climod.should_open_report("text", True) is False  # only HTML is browser-viewable
+    monkeypatch.setattr(cliutils, "stdio_interactive", lambda: True)
+    assert climod.should_open_report("html", None) is True
 
 
 def test_html_does_not_open_browser_in_auto_mode_under_test(tmp_path, monkeypatch):
@@ -446,7 +452,7 @@ def test_save_ignores_full_loop_then_silenced(tmp_path, monkeypatch):
     target = colon[0] if colon else findings[0]
 
     # An interactive-terminal only flow -> pretend we're at a TTY.
-    monkeypatch.setattr(climod, "_stdio_interactive", lambda: True)
+    monkeypatch.setattr(climod, "stdio_interactive", lambda: True)
 
     class _FakeCheckbox:
         def __init__(self, *a, **k):
@@ -477,7 +483,7 @@ def test_save_ignores_full_loop_then_silenced(tmp_path, monkeypatch):
 def test_save_ignores_no_terminal_writes_nothing(tmp_path, monkeypatch):
     from coop_dax_review import cli as climod
 
-    monkeypatch.setattr(climod, "_stdio_interactive", lambda: False)
+    monkeypatch.setattr(climod, "stdio_interactive", lambda: False)
     cfg = tmp_path / "rules.yml"
     result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--config", str(cfg), "--save-ignores"])
     assert result.exit_code == 0
@@ -486,9 +492,8 @@ def test_save_ignores_no_terminal_writes_nothing(tmp_path, monkeypatch):
 
 
 def test_cwd_rules_yml_is_auto_discovered(tmp_path, monkeypatch):
-    # A rules.yml in the working directory is picked up with no --config flag.
-    # Fingerprints embed the cwd-relative display path, so compute them from the
-    # SAME cwd we scan from — derive them after chdir.
+    # A rules.yml in the working directory is picked up with no --config flag
+    # (the deprecated shared name still works everywhere it used to).
     monkeypatch.chdir(tmp_path)
     finding = _unique_finding_with_plain_object()
     (tmp_path / "rules.yml").write_text(
@@ -496,3 +501,107 @@ def test_cwd_rules_yml_is_auto_discovered(tmp_path, monkeypatch):
     )
     out = CliRunner().invoke(cli, ["check", str(FIXTURES)]).output
     assert finding["rule_id"] not in out  # auto-discovered ignore silenced it
+
+
+# ---- unified config discovery (core discover_config; coop-review-core#12) ----
+
+
+def test_env_var_names_the_config(tmp_path, monkeypatch):
+    # COOP_DAX_REVIEW_CONFIG points a run (or a whole CI pipeline) at one config.
+    finding = _unique_finding_with_plain_object()
+    cfg = tmp_path / "team-config.yml"
+    cfg.write_text(f"ignore:\n  - fingerprint: {finding['fingerprint']}\n", encoding="utf-8")
+    monkeypatch.setenv("COOP_DAX_REVIEW_CONFIG", str(cfg))
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES)]).output
+    assert finding["rule_id"] not in out  # the env-var config applied
+
+
+def test_env_var_missing_file_is_usage_error(monkeypatch):
+    # A set-but-missing env var path is a misconfiguration, never a silent fallback.
+    monkeypatch.setenv("COOP_DAX_REVIEW_CONFIG", "/nope/does-not-exist.yml")
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
+    assert result.exit_code == 2
+    assert "COOP_DAX_REVIEW_CONFIG" in result.output
+
+
+def test_tool_named_config_wins_over_rules_yml(tmp_path, monkeypatch):
+    # coop-dax-review.yml is the preferred filename; a rules.yml in the same
+    # directory is shadowed (with a note on stderr) — so a monorepo can configure
+    # this tool and coop-sql-review side by side without fighting over one file.
+    monkeypatch.chdir(tmp_path)
+    finding = _unique_finding_with_plain_object()
+    (tmp_path / "coop-dax-review.yml").write_text(
+        f"ignore:\n  - fingerprint: {finding['fingerprint']}\n", encoding="utf-8"
+    )
+    (tmp_path / "rules.yml").write_text("ignore:\n  - fingerprint: deadbeefdead\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
+    assert finding["rule_id"] not in result.stdout  # the tool-named config applied
+    assert "shadowed" in result.stderr  # the losing rules.yml is called out
+    assert "ignore_stale" not in result.stdout  # the rules.yml entry was never loaded
+
+
+def test_config_discovered_by_parent_walk_up(tmp_path, monkeypatch):
+    # A config in a parent directory applies when running from a subdirectory
+    # (git-style walk-up), so one repo-root config covers every model folder.
+    finding = _unique_finding_with_plain_object()
+    (tmp_path / "coop-dax-review.yml").write_text(
+        f"ignore:\n  - fingerprint: {finding['fingerprint']}\n", encoding="utf-8"
+    )
+    nested = tmp_path / "models" / "sales"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    out = CliRunner().invoke(cli, ["check", str(FIXTURES)]).output
+    assert finding["rule_id"] not in out  # the repo-root config applied
+
+
+def test_rules_yml_discovery_prints_deprecation_note(tmp_path, monkeypatch):
+    # Finding a config via the legacy shared name nudges toward the tool-named
+    # file on stderr (rules.yml keeps working; the note is advisory).
+    monkeypatch.chdir(tmp_path)
+    finding = _unique_finding_with_plain_object()
+    (tmp_path / "rules.yml").write_text(
+        f"ignore:\n  - fingerprint: {finding['fingerprint']}\n", encoding="utf-8"
+    )
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
+    assert "deprecated" in result.stderr and "coop-dax-review.yml" in result.stderr
+    assert "deprecated" not in result.stdout  # the note never pollutes the report
+
+
+def test_save_ignores_writes_back_to_the_discovered_config(tmp_path, monkeypatch):
+    # The core config_write_path fix: --save-ignores appends to the config this
+    # run actually READ (here: a standards-side rules.yml) instead of
+    # unconditionally creating ./rules.yml — which would silently SHADOW the
+    # real config on the next run.
+    import shutil
+
+    from coop_dax_review import cli as climod
+    from coop_dax_review.standards import BUNDLED_STANDARDS
+
+    std_dir = tmp_path / "standards"
+    std_dir.mkdir()
+    std = std_dir / "standards.md"
+    shutil.copyfile(BUNDLED_STANDARDS, std)
+    cfg = std_dir / "rules.yml"  # the conventional spot beside the standards file
+    cfg.write_text("# team config\n", encoding="utf-8")
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+
+    monkeypatch.setattr(climod, "stdio_interactive", lambda: True)
+
+    class _FakeCheckbox:
+        def __init__(self, *a, **k):
+            self._values = k.get("choices", [])
+
+        def ask(self):  # the user checks every offered finding
+            return list(self._values)
+
+    import questionary
+
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox(**k))
+    monkeypatch.setattr(questionary, "Choice", lambda **k: k.get("value"))
+
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--standards", str(std), "--save-ignores"])
+    assert result.exit_code == 0
+    assert "ignore:" in cfg.read_text(encoding="utf-8")  # written back to what was read
+    assert not (workdir / "rules.yml").exists()  # no shadowing ./rules.yml appeared

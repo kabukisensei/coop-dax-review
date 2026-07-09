@@ -24,7 +24,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "coop-review-core>=0.3.0",
+    "coop-review-core>=0.4,<0.5",
     "PyYAML>=6.0",
     "click>=8.1",
     "questionary>=2.0",
@@ -48,8 +48,9 @@ path = "src/coop_dax_review/__init__.py"   # the single source of truth for the 
 packages = ["src/coop_dax_review"]
 
 [tool.hatch.build]
-# Ship the bundled standards (so `check` works with no --standards) and the
-# logo (for the branded HTML report).
+# Ship the bundled standards (so `check` works with no --standards). The
+# Cooptimize logo for the branded HTML report now comes from coop-review-core's
+# package data (the family's single copy).
 include = ["src/coop_dax_review/**/*.py", "src/coop_dax_review/data/*"]
 
 [tool.pytest.ini_options]

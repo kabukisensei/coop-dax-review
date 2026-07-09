@@ -128,7 +128,7 @@ files or breaks the version gate will fail CI and block the next release anyway.
 ## Testing against local coop-review-core
 
 This tool's `.venv` holds a **non-editable installed copy** of the shared `coop-review-core`
-package (pyproject pins `coop-review-core>=0.2.0`), NOT an editable link to the local
+package (pyproject pins `coop-review-core>=0.4,<0.5`), NOT an editable link to the local
 `coop-review-core` checkout. Edits to the local core checkout are therefore **invisible** to
 this tool until core is re-published and reinstalled. Do not `pip install -e` the local core into
 this venv — editable installs are unreliable here (see dev-env gotchas). The coop-* repos are
@@ -195,11 +195,20 @@ Sibling tool to `coop-sql-review` (same architecture/contracts). Reference imple
 from: the `coop-data-doc` package (PyPI: `coop-data-doc`).
 
 **Shared core:** the tool-agnostic infrastructure lives in the published
-[`coop-review-core`](https://github.com/kabukisensei/coop-review-core) package (runtime dep). The
+[`coop-review-core`](https://github.com/kabukisensei/coop-review-core) package (runtime dep;
+pinned `>=0.4,<0.5`). The
 local modules `progress.py`, `diagnostics.py`, `suppressions.py`, `upgrade.py`, and `standards.py`
 are now **thin shims** that re-export / forward to core (baking in this tool's name); `finding.py`
 sources `SEVERITIES`/`severity_rank`/`at_or_above`/`fingerprint` from `coop_review_core.severity` but
-keeps the `model`-carrying `Finding`/`AgentReviewItem`. Fix shared infra in `coop-review-core`; keep
+keeps the `model`-carrying `Finding`/`AgentReviewItem`. Since core 0.4.0, `report.py` builds on
+`coop_review_core.report` (console chrome, the branded HTML style + the family's ONE bundled logo,
+the JSON envelope + verdict, the diagnostics log) and keeps only the
+model-grouped renderers + this tool's finding dicts; `cli.py` imports its edge helpers
+(`display_path`, `stdio_interactive`, `use_color`, `config_write_path`,
+`apply_syntax_error_policy`, `write_extra_report`, `should_open_report`, `force_utf8_console`,
+`run_upgrade`/`with_upgrade_options`) from `coop_review_core.cliutils` and config
+loading/discovery (`load_config_friendly`, `parse_syntax_errors_knob`, `discover_config`) from
+`coop_review_core.config` via the `standards.py` shim. Fix shared infra in `coop-review-core`; keep
 the tool's own parsers, rules, Rule/RuleContext/Result, and `standards.md` here.
 
 ## Build approach — reuse, do not start from scratch
@@ -262,10 +271,13 @@ coop-dax-review --version
   in the one writable config file. Filtered before the `--min-severity` floor (like the baseline). A
   stale entry (no longer matching a current finding) is reported as an `ignore_stale` diagnostic.
   `check --save-ignores` shows an interactive checkbox (opt-in, all unchecked) of this run's findings
-  and appends the picks to `rules.yml` via core `add_ignores` (interactive terminal only). Config
-  discovery (`_config_read_path`): `--config` if given, else a `rules.yml` in the current directory
-  (so save-then-re-run silences with no flags), else beside the standards file; writes go to
-  `--config` else `./rules.yml` (never the bundled package dir).
+  and appends the picks via core `add_ignores` (interactive terminal only). Config discovery (core
+  `discover_config`): `--config` if given, else the `COOP_DAX_REVIEW_CONFIG` env var, else a
+  `coop-dax-review.yml` (preferred) or `rules.yml` (the deprecated shared name) per directory on a
+  git-style walk from the cwd up to the repo root, else beside the standards file — discovery
+  notes (the rules.yml deprecation nudge, a shadowed-file warning) surface on stderr. Writes go to
+  `--config` if given, else back to the config the run actually read (core `config_write_path` —
+  never inside the installed package), else `./rules.yml`.
 - **Extra report sinks**: `--html FILE` / `--md FILE` write a self-contained HTML / Markdown report
   in *addition* to the main `--format` output (they compose with any format and never open a
   browser). Distinct from `--format html`, which always writes/opens a single default-named file.

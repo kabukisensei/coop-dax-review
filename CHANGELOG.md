@@ -5,6 +5,40 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [Unreleased]
+### Added
+- **Unified config discovery** (via `coop-review-core` 0.4.0's `discover_config`). The config file
+  is now found, first hit wins, via: `--config`; the new **`COOP_DAX_REVIEW_CONFIG`** environment
+  variable (point a whole CI pipeline at one config without threading `--config` through every
+  call site — a set-but-missing path is a friendly usage error, never a silent fallback); a
+  **`coop-dax-review.yml`** (the new, preferred tool-named config) or `rules.yml` per directory on
+  a **git-style walk from the current directory up to the repo root**; else the conventional spot
+  beside the standards file. The tool-named file uses the identical schema and ends the monorepo
+  collision where this tool and `coop-sql-review` fought over one shared `rules.yml` — when both
+  files sit in one directory the tool-named one wins (with a note on stderr).
+### Changed
+- **Adopt `coop-review-core` 0.4.0** (the report/CLI-helper/envelope/config-discovery
+  consolidation; pyproject now pins `coop-review-core>=0.4,<0.5`). The console chrome, branded
+  HTML style + the bundled Cooptimize logo (the duplicated `data/cooptimize-logo.png` is deleted —
+  core ships the family's single copy), the machine-JSON envelope + verdict, the diagnostics log,
+  the CLI edge helpers (`display_path`/`stdio_interactive`/`use_color`/`write_extra_report`/
+  `should_open_report`/`force_utf8_console`), the `syntax_errors` policy, the friendly config
+  loader, and the shared `upgrade`/`update` command body (message wording unified across the
+  family; commands shlex-joined) now come from core instead of drifting local copies.
+  JSON/markdown/HTML/console/log output is **byte-identical** to 0.11.0.
+### Fixed
+- **`--save-ignores` now writes back to the config file the run actually read** (core
+  `config_write_path`) instead of unconditionally creating `./rules.yml`. Previously, saving an
+  ignore while a standards-side (or otherwise discovered) config was in effect wrote a brand-new
+  `./rules.yml` that silently *shadowed* the real config on the next run — the team's overrides
+  stopped applying with no message. `--config` still names the write target explicitly, and writes
+  never land inside the installed package.
+### Deprecated
+- **The shared `rules.yml` config filename.** It keeps working everywhere it worked before (same
+  schema, same discovery spots), but every coop-*-review tool reads it; rename yours to
+  `coop-dax-review.yml` to make it tool-specific. Discovery prints a one-line nudge on stderr when
+  the legacy name is used.
+
 ## [0.11.0] — 2026-07-09
 ### Fixed
 - **The TMDL parser now reads the dialect real PBIP/Desktop exports actually write.** Two
