@@ -10,6 +10,12 @@ sectioned, colorized terminal report, Markdown, or a self-contained branded HTML
 Sibling tool to [`coop-sql-review`](https://github.com/kabukisensei/coop-sql-review) — same
 architecture and contracts.
 
+Part of the Cooptimize **coop suite** — if your team uses
+[coop-agent](https://github.com/kabukisensei/coop-agent), `coop install` installs this plus the
+sibling tools ([coop-sql-review](https://github.com/kabukisensei/coop-sql-review),
+[coop-data-doc](https://github.com/kabukisensei/coop-data-doc)); `coop update` keeps them
+current.
+
 ## Install
 
 ```sh
