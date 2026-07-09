@@ -22,6 +22,7 @@ from coop_review_core.report import (
     BADGE_COLOR,
     HTML_STYLE,
     REPORT_WIDTH,
+    SARIF_LEVEL,
     build_envelope,
     chip,
     diagnostic_json,
@@ -32,6 +33,7 @@ from coop_review_core.report import (
     verdict,
 )
 from coop_review_core.report import log_text as _core_log_text
+from coop_review_core.report import to_sarif as _core_to_sarif
 
 from coop_dax_review.engine import Result
 from coop_dax_review.finding import SEVERITIES
@@ -355,3 +357,81 @@ def log_text(result: Result) -> str:
     """Full diagnostics log for ``--log-file``: every processing problem,
     one per line, deterministically ordered. Empty-safe."""
     return _core_log_text(result.diagnostics, tool=TOOL, checked=result.models_checked, unit="model")
+
+
+# --- SARIF 2.1.0 (GitHub code scanning / Azure DevOps PR annotations) ----------------
+
+_SARIF_INFO_URI = "https://github.com/kabukisensei/coop-dax-review"
+# The synthetic rule core appends to carry error-severity diagnostics (genuinely
+# malformed DAX, rule crashes, unreadable model files) as PR-line annotations.
+_SARIF_DIAG_DESCRIPTION = (
+    "A processing problem: a genuine DAX syntax error, a rule crash, or an unreadable model file."
+)
+
+
+def _sarif_driver_rules() -> list[dict]:
+    """This tool's SARIF rule-metadata table (every rule, agent ones included —
+    their items surface as non-blocking notes). Mirrors the coop-sql-review
+    twin's shape: id/name, the rule title as shortDescription, the default
+    severity mapping, and the standards §ref/tier/category as properties."""
+    from coop_dax_review.rules import all_rules  # lazy: avoid an import cycle
+
+    return [
+        {
+            "id": r.id,
+            "name": r.id,
+            "shortDescription": {"text": r.title},
+            "defaultConfiguration": {"level": SARIF_LEVEL.get(r.severity, "note")},
+            "properties": {
+                "standard_ref": r.standard_ref,
+                "tier": r.tier,
+                "category": r.category,
+            },
+        }
+        for r in all_rules()
+    ]
+
+
+def to_sarif(result: Result, *, version: str, standards: dict[str, str]) -> str:
+    """A deterministic single-run SARIF 2.1.0 log (string + trailing LF), via
+    core's shared emitter (one emitter for the whole family — never fork it).
+
+    Findings/agent-items/error-diagnostics become ``results`` with SARIF
+    ``level`` (error/warning/note), a physical location (the TMDL/.bim file +
+    line; the model name travels in the message-bearing finding itself), and
+    ``partialFingerprints`` (GitHub uses them to dedupe alerts across runs).
+    Agent-review items are non-blocking ``note`` results; warning-severity
+    diagnostics are advisory processing notes and are intentionally NOT
+    emitted. ``standards`` is accepted for renderer-signature parity (the
+    provenance travels in the JSON contract, not the SARIF log).
+    """
+    del standards  # renderer-signature parity only (see docstring)
+    return _core_to_sarif(
+        tool_name=TOOL,
+        information_uri=_SARIF_INFO_URI,
+        version=version,
+        driver_rules=_sarif_driver_rules(),
+        findings=[
+            {
+                "rule_id": f.rule_id,
+                "severity": f.severity,
+                "file": f.file,
+                "line": f.line,
+                "message": f.message,
+                "fingerprint": f.fingerprint(),
+            }
+            for f in result.findings
+        ],
+        agent_review=[
+            {
+                "rule_id": a.rule_id,
+                "note": a.note,
+                "file": a.file,
+                "line": a.line,
+                "fingerprint": a.fingerprint(),
+            }
+            for a in result.agent_review
+        ],
+        diagnostics=result.diagnostics,
+        diagnostics_rule_description=_SARIF_DIAG_DESCRIPTION,
+    )

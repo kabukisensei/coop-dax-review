@@ -202,7 +202,7 @@ are now **thin shims** that re-export / forward to core (baking in this tool's n
 sources `SEVERITIES`/`severity_rank`/`at_or_above`/`fingerprint` from `coop_review_core.severity` but
 keeps the `model`-carrying `Finding`/`AgentReviewItem`. Since core 0.4.0, `report.py` builds on
 `coop_review_core.report` (console chrome, the branded HTML style + the family's ONE bundled logo,
-the JSON envelope + verdict, the diagnostics log) and keeps only the
+the JSON envelope + verdict, the diagnostics log, the SARIF emitter) and keeps only the
 model-grouped renderers + this tool's finding dicts; `cli.py` imports its edge helpers
 (`display_path`, `stdio_interactive`, `use_color`, `config_write_path`,
 `apply_syntax_error_policy`, `write_extra_report`, `should_open_report`, `force_utf8_console`,
@@ -248,7 +248,8 @@ there (`text` / `catalog` / `model` / `agent`) tells you what context each rule 
 
 ```
 coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
-                      [--format text|json|markdown|html] [-o FILE] [--html FILE] [--md FILE]
+                      [--format text|json|markdown|html|sarif] [-o FILE]
+                      [--html FILE] [--md FILE] [--sarif FILE]
                       [--open/--no-open] [--color/--no-color] [--baseline <path>]
                       [--write-baseline <path>] [--save-ignores] [--min-severity ...]
                       [--log-file <path>] [--strict]
@@ -264,8 +265,13 @@ coop-dax-review --version
   `--min-severity` floor (`--write-baseline` records agent fingerprints too; an entry matching only
   an agent item is never stale) — same contract as coop-sql-review. Findings carry a stable, line-
   and path-independent `Finding.fingerprint()` (`rule_id, model, object, message/note` — no file, no
-  line — schema_version 2, so baselines/ignores survive a cwd or machine change); the JSON adds
+  line — **still schema_version 2**: the family-wide identity-scheme bump is tracked separately as
+  issue #14, so baselines/ignores survive a cwd or machine change); the JSON adds
   `schema_version`, a `verdict`, `models_checked`, and a `fingerprint` per finding/agent-review item.
+  The same fingerprints travel in the SARIF output as `partialFingerprints` under the family's
+  frozen key `coopFingerprint/v2` (core `SARIF_FINGERPRINT_KEY` — GitHub code scanning matches
+  alerts across runs by that key/value pair; no alerts have shipped from this tool yet, so the
+  default key is the right one).
 - **`rules.yml` ignore list** (core `RuleConfig.ignored_fingerprints` + `add_ignores`): an optional
   top-level `ignore:` list in `rules.yml` — human-readable, fingerprint-matched suppressions living
   in the one writable config file. Filtered before the `--min-severity` floor (like the baseline). A
@@ -278,9 +284,17 @@ coop-dax-review --version
   notes (the rules.yml deprecation nudge, a shadowed-file warning) surface on stderr. Writes go to
   `--config` if given, else back to the config the run actually read (core `config_write_path` —
   never inside the installed package), else `./rules.yml`.
-- **Extra report sinks**: `--html FILE` / `--md FILE` write a self-contained HTML / Markdown report
-  in *addition* to the main `--format` output (they compose with any format and never open a
-  browser). Distinct from `--format html`, which always writes/opens a single default-named file.
+- **Extra report sinks**: `--html FILE` / `--md FILE` / `--sarif FILE` write a self-contained HTML /
+  Markdown / SARIF 2.1.0 report in *addition* to the main `--format` output (they compose with any
+  format and never open a browser). Distinct from `--format html`, which always writes/opens a
+  single default-named file.
+- **SARIF** (`--format sarif` or the `--sarif FILE` sink; flag semantics mirror coop-sql-review):
+  a deterministic SARIF 2.1.0 log via core's shared `to_sarif` emitter — never fork a local copy.
+  Findings map to their rule/severity (info -> `note`), agent-review items are non-blocking `note`
+  results, error-severity diagnostics ride the synthetic `syntax-error` rule, and warning-severity
+  diagnostics are intentionally not emitted. Rule metadata (title, §ref, tier, category) comes from
+  `report._sarif_driver_rules()`. `--format sarif` prints to stdout unless `-o` is given (the CI
+  form: `--format sarif -o coop-dax-review.sarif`, then upload-sarif — snippet in README).
 
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
   `check` with no paths in a TTY and a `questionary` checkbox picks which subfolders to scan.
@@ -288,12 +302,15 @@ coop-dax-review --version
   the parent folder for loose files), so same-named dev/prod models stay distinct and a flat
   folder of `.tmdl` files is one model. An explicitly passed non-`.tmdl`/`.bim` file is called
   out on stderr, never parsed as a phantom `.bim`.
-- Default exit **0** (advisory). `--strict` is the opt-in gate that can return non-zero — exit 2
-  when findings remain **or when zero models were checked** (a typo'd path must not pass CI as
-  clean; a zero-model run still renders every format/sink, with `models_checked: 0` and one
-  `scan_empty` diagnostic per searched root). A malformed/mis-encoded `rules.yml` (or a missing
-  explicit `--config`) is a friendly one-line usage error, exit 2 (`cli._load_rule_config` —
-  mirrors coop-sql-review).
+- Exit codes follow the **family-wide contract** stated once in
+  [coop-review-core's AGENTS.md](https://github.com/kabukisensei/coop-review-core/blob/main/AGENTS.md)
+  ("Exit-code contract": 0 advisory / 1 friendly tool failure / 2 usage error + the `--strict`
+  trip / 130 interrupt) — don't restate the table here. Tool-specifics only: `--strict` trips
+  (exit 2) when findings remain, **when zero models were checked** (a typo'd path must not pass CI
+  as clean; a zero-model run still renders every format/sink, with `models_checked: 0` and one
+  `scan_empty` diagnostic per searched root), or when an error-severity diagnostic remains. A
+  malformed/mis-encoded config (or a missing explicit `--config` / env-var path) is a friendly
+  one-line usage error, exit 2 (`cli._load_rule_config` — mirrors coop-sql-review).
 - `--standards` defaults to the bundled `data/standards.md` (kept byte-identical to the authored
   `docs/standards.md`); `--log-file` writes a diagnostics log.
 - The default `--format text` is a **sectioned report** (banner, one section per model with

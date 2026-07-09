@@ -7,6 +7,17 @@ field and are called out here.
 
 ## [Unreleased]
 ### Added
+- **SARIF output** (`--format sarif`, plus a `--sarif FILE` extra sink that composes with any
+  `--format`, like `--html`/`--md`) via `coop-review-core` 0.4.0's shared `to_sarif` emitter — one
+  emitter for the whole family, flag semantics identical to `coop-sql-review`. Emits a
+  deterministic SARIF 2.1.0 log GitHub code scanning / Azure DevOps turn into inline PR
+  annotations on the exact TMDL/`.bim` lines: findings map to their rule id/severity (info ->
+  `note`) with the rule title, standards §ref, tier, and category in the rule metadata;
+  agent-review items surface as non-blocking `note` results; error-severity diagnostics (genuinely
+  malformed DAX, rule crashes, unreadable model files) ride a synthetic `syntax-error` rule so
+  broken input still annotates. Each result carries the finding's stable fingerprint as
+  `partialFingerprints` (key `coopFingerprint/v2`) so alerts dedupe across runs. The README gains
+  a paste-ready GitHub Actions snippet (`--format sarif -o` + `upload-sarif`).
 - **Unified config discovery** (via `coop-review-core` 0.4.0's `discover_config`). The config file
   is now found, first hit wins, via: `--config`; the new **`COOP_DAX_REVIEW_CONFIG`** environment
   variable (point a whole CI pipeline at one config without threading `--config` through every

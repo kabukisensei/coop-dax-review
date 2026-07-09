@@ -27,10 +27,11 @@ python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
 ## Usage
 
 ```sh
-coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html] [-o FILE]
-                      [--html FILE] [--md FILE] [--open/--no-open] [--color/--no-color]
-                      [--log-file FILE] [--baseline FILE] [--write-baseline FILE]
-                      [--save-ignores] [--min-severity error|warning|info] [--strict]
+coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html|sarif] [-o FILE]
+                      [--html FILE] [--md FILE] [--sarif FILE] [--open/--no-open]
+                      [--color/--no-color] [--log-file FILE] [--baseline FILE]
+                      [--write-baseline FILE] [--save-ignores]
+                      [--min-severity error|warning|info] [--strict]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
 coop-dax-review upgrade [--check]     # show the command to update (never self-applies; alias: update)
 coop-dax-review --version
@@ -81,14 +82,31 @@ e.g. in CI). `upgrade`/`update` print the exact command to run yourself (`pipx u
 coop-dax-review`, etc.) rather than self-applying, since a package manager can't replace the tool
 while it is running; `upgrade --check` reports whether an update is available and stops there.
 
-Want a report file *and* the usual console/JSON output in one run? `--html FILE` and `--md FILE`
-are extra sinks: they write a self-contained HTML and/or Markdown report to the paths you name in
-addition to whatever `--format` prints, and never open a browser. Handy for CI — e.g. keep the JSON
-contract on stdout while dropping a human-readable HTML artifact alongside it:
+Want a report file *and* the usual console/JSON output in one run? `--html FILE`, `--md FILE`, and
+`--sarif FILE` are extra sinks: they write a self-contained HTML, Markdown, and/or SARIF report to
+the paths you name in addition to whatever `--format` prints, and never open a browser. Handy for
+CI — e.g. keep the JSON contract on stdout while dropping a human-readable HTML artifact alongside
+it:
 
 ```sh
 coop-dax-review check . --format json --html report.html --md report.md
 ```
+
+**Annotate a pull request in CI (GitHub / Azure DevOps).** `--format sarif` emits a standard
+**SARIF 2.1.0** report that GitHub code scanning (and Azure DevOps) turn into inline PR
+annotations on the exact TMDL/`.bim` lines. Findings map to their rule/severity, agent-review
+items surface as non-blocking notes, and genuinely malformed DAX (a `syntax_error` diagnostic)
+annotates as an error. A ready-to-paste GitHub Actions step:
+```yaml
+    - name: DAX standards review
+      run: coop-dax-review check models/ --format sarif -o coop-dax-review.sarif
+    - name: Upload SARIF
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: coop-dax-review.sarif
+```
+The tool stays advisory (exit 0) unless you add `--strict`, so the SARIF annotations appear
+without failing the build — add `--strict` if you want the build to go red on remaining findings.
 
 ## What it checks
 

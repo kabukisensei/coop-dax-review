@@ -49,7 +49,7 @@ from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 from coop_dax_review.parsers.tmdl import group_tmdl_files, parse_tmdl_model
 from coop_dax_review.progress import Progress, should_enable
-from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown
+from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown, to_sarif
 from coop_dax_review.rules import all_rules
 from coop_dax_review.suppressions import (
     TOOL,
@@ -422,7 +422,7 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["text", "json", "markdown", "html"]),
+    type=click.Choice(["text", "json", "markdown", "html", "sarif"]),
     default="text",
     show_default=True,
 )
@@ -448,6 +448,13 @@ def cli(ctx: click.Context) -> None:
     type=click.Path(),
     default=None,
     help="Also write a Markdown report to this path (composes with any --format).",
+)
+@click.option(
+    "--sarif",
+    "sarif_path",
+    type=click.Path(),
+    default=None,
+    help="Also write a SARIF 2.1.0 report to this path (for GitHub/ADO PR annotations; composes with any --format).",
 )
 @click.option(
     "--open/--no-open",
@@ -506,6 +513,7 @@ def check(
     output_path: str | None,
     html_path: str | None,
     md_path: str | None,
+    sarif_path: str | None,
     open_report: bool | None,
     color_flag: bool | None,
     min_severity: str,
@@ -522,13 +530,15 @@ def check(
     \b
     Report output:
       The text report prints to the screen. To redirect or save it:
-        --format text|json|markdown|html   choose the format (default: text)
+        --format text|json|markdown|html|sarif   choose the format (default: text)
+                                           (sarif = GitHub/ADO PR annotations)
         -o, --output FILE                  write that report to FILE
                                            (--format html always writes a file)
       To ALSO save shareable files in ONE run -- on top of whatever prints --
-      add either or both (they compose with each other and with --format):
-        --html FILE   a self-contained, branded HTML report
-        --md FILE     a Markdown report
+      add any of these (they compose with each other and with --format):
+        --html FILE    a self-contained, branded HTML report
+        --md FILE      a Markdown report
+        --sarif FILE   a SARIF 2.1.0 report (GitHub/ADO PR annotations)
     \b
         coop-dax-review check ./MyModel.SemanticModel --html report.html --md report.md
 
@@ -717,6 +727,10 @@ def check(
         rendered = to_markdown(result, version=__version__, standards=standards) + "\n"
     elif fmt == "html":
         rendered = to_html(result, version=__version__, standards=standards)
+    elif fmt == "sarif":
+        # Like json: renders to stdout unless -o is given (SARIF is file-oriented but a
+        # stdout dump pipes fine and keeps parity with the other machine formats).
+        rendered = to_sarif(result, version=__version__, standards=standards)
     else:
         body = console_lines(result, version=__version__, standards=standards, color=colorize)
         rendered = "\n".join(body) + "\n"
@@ -755,6 +769,8 @@ def check(
         write_extra_report(
             md_path, to_markdown(result, version=__version__, standards=standards) + "\n", "Markdown"
         )
+    if sarif_path:
+        write_extra_report(sarif_path, to_sarif(result, version=__version__, standards=standards), "SARIF")
 
     if log_file:
         try:
