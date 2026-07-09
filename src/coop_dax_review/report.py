@@ -189,6 +189,11 @@ def console_lines(
             if a.object:
                 head += f"   {a.object}"
             lines.append(head)
+            # The section spans all models, so each row names its model and
+            # file(:line) — without them a row on a multi-model estate is
+            # impossible to locate (issue #17; matches the HTML report).
+            loc = f"{a.file}:{a.line}" if a.line else a.file
+            lines.append(indent + sty(f"{a.model} - {loc}", "dim", color=color))
             for wrapped in textwrap.wrap(a.note, REPORT_WIDTH - 9):
                 lines.append(indent + wrapped)
 
@@ -314,11 +319,13 @@ def to_markdown(result: Result, *, version: str, standards: dict[str, str]) -> s
 
 
 def _finding_row(f) -> str:
-    """One finding as an HTML grid row: chip + (rule, ref, object, location) + message."""
+    """One finding as an HTML grid row: chip + (rule, ref, object, location) +
+    message. ``data-sev``/``data-rule`` feed the filter toggles (issue #17)."""
     loc = f"{esc(f.file)}:{esc(f.line)}" if f.line else esc(f.file)
     obj = f"{esc(f.object)} &middot; " if f.object else ""
     return (
-        f'<div class="f {esc(f.severity)}">{chip(f.severity)}'
+        f'<div class="f {esc(f.severity)}" data-sev="{esc(f.severity)}" data-rule="{esc(f.rule_id)}">'
+        f"{chip(f.severity)}"
         f'<div class="head"><span class="rule">{esc(f.rule_id)}</span> '
         f"({esc(f.standard_ref)}) &middot; {obj}{loc}</div>"
         f'<div class="msg">{esc(f.message)}</div></div>'
@@ -326,7 +333,8 @@ def _finding_row(f) -> str:
 
 
 # Tool-local additions on top of core's shared HTML_STYLE (still one inline
-# <style>, fully offline): the "Findings by rule" summary table (issue #15).
+# <style>, fully offline): the "Findings by rule" summary table (issue #15)
+# and the severity/rule filter bar (issue #17).
 _EXTRA_STYLE = """
 .byrule { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .byrule td { padding: 8px 16px; border-bottom: 1px solid var(--line); }
@@ -334,7 +342,88 @@ _EXTRA_STYLE = """
 .byrule .count { font-family: var(--mono); text-align: right; width: 5ch; font-weight: 600; }
 .byrule .rule { font-family: var(--mono); font-weight: 600; }
 .hint { color: var(--muted); font-size: 0.8rem; padding: 10px 16px; border-top: 1px solid var(--line); }
+.filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
+.filters .label { color: var(--muted); font-size: 0.8rem; }
+.fbtn { font: inherit; font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); cursor: pointer; }
+.fbtn.error { color: var(--error); background: var(--error-bg); border-color: transparent; }
+.fbtn.warning { color: var(--warning); background: var(--warning-bg); border-color: transparent; }
+.fbtn.info { color: var(--info); background: var(--info-bg); border-color: transparent; }
+.fbtn.off { opacity: 0.35; }
+.filters select { font: inherit; font-size: 0.8rem; padding: 4px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 """
+
+# Filter behavior (issue #17): a clicked severity chip toggles that severity's
+# finding rows; the rule <select> narrows to one rule; a model card whose rows
+# are all hidden hides too. Plain inline vanilla JS — the report MUST stay a
+# self-contained offline single file (no CDN, no framework, no network).
+_FILTER_SCRIPT = """<script>
+(function () {
+  var hidden = {};
+  var select = document.getElementById("rulefilter");
+  function apply() {
+    var rule = select ? select.value : "";
+    document.querySelectorAll(".f[data-rule]").forEach(function (row) {
+      var show = !hidden[row.getAttribute("data-sev")] &&
+        (!rule || row.getAttribute("data-rule") === rule);
+      row.style.display = show ? "" : "none";
+    });
+    document.querySelectorAll(".card").forEach(function (card) {
+      var rows = card.querySelectorAll(".f[data-rule]");
+      if (!rows.length) return;
+      var any = false;
+      rows.forEach(function (r) { if (r.style.display !== "none") any = true; });
+      card.style.display = any ? "" : "none";
+    });
+  }
+  document.querySelectorAll(".fbtn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var sev = btn.getAttribute("data-sev");
+      hidden[sev] = !hidden[sev];
+      btn.classList.toggle("off", !!hidden[sev]);
+      apply();
+    });
+  });
+  if (select) select.addEventListener("change", apply);
+})();
+</script>"""
+
+
+def _filter_bar(findings, summary) -> str:
+    """The severity-chip + rule-select filter row (issue #17), or ``""`` when
+    there is nothing to filter. Deterministic: severities in SEVERITIES order,
+    rules sorted; presentation only (the JSON contract is untouched)."""
+    if not findings:
+        return ""
+    chips = "".join(
+        f'<button type="button" class="fbtn {s}" data-sev="{s}">{summary[s]} {s}</button>'
+        for s in SEVERITIES
+        if summary[s]
+    )
+    rules = sorted({f.rule_id for f in findings})
+    options = '<option value="">all rules</option>' + "".join(
+        f'<option value="{esc(r)}">{esc(r)}</option>' for r in rules
+    )
+    return (
+        '<div class="filters"><span class="label">show:</span>'
+        f'{chips}<select id="rulefilter" aria-label="Filter by rule">{options}</select></div>'
+    )
+
+
+def _agent_row(a) -> str:
+    """One agent-review item as an HTML row — WITH its model and file:line
+    (issue #17): the section spans all models in one card, so without them a
+    row on a multi-model estate was impossible to locate. A model-level item
+    (``object`` == model) skips the redundant object."""
+    loc = f"{esc(a.file)}:{esc(a.line)}" if a.line else esc(a.file)
+    obj = f"{esc(a.object)} &middot; " if a.object and a.object != a.model else ""
+    return (
+        f'<div class="f"><span class="chip info">agent</span>'
+        f'<div class="head"><span class="rule">{esc(a.rule_id)}</span> '
+        f"({esc(a.standard_ref)}) &middot; {esc(a.model)} &middot; {obj}{loc}</div>"
+        f'<div class="msg">{esc(a.note)}</div></div>'
+    )
 
 
 def _byrule_card(findings) -> str:
@@ -388,6 +477,9 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
     byrule = _byrule_card(result.findings)
     if byrule:
         parts.append(byrule)
+    filter_bar = _filter_bar(result.findings, summary)
+    if filter_bar:
+        parts.append(filter_bar)
 
     by_model: dict[str, list] = {}
     for finding in result.findings:
@@ -402,13 +494,7 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
 
     if result.agent_review:
         parts.append("<h2>Agent review (judgment required)</h2>")
-        rows = "".join(
-            f'<div class="f"><span class="chip info">agent</span>'
-            f'<div class="head"><span class="rule">{esc(a.rule_id)}</span> '
-            f"({esc(a.standard_ref)}) &middot; {esc(a.object)}</div>"
-            f'<div class="msg">{esc(a.note)}</div></div>'
-            for a in result.agent_review
-        )
+        rows = "".join(_agent_row(a) for a in result.agent_review)
         parts.append(f'<div class="card">{rows}</div>')
 
     if result.diagnostics:
@@ -422,6 +508,8 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
         )
         parts.append(f'<div class="card">{rows}</div>')
 
+    if filter_bar:
+        parts.append(_FILTER_SCRIPT)
     parts.append("</div></body></html>")
     return "\n".join(parts) + "\n"
 

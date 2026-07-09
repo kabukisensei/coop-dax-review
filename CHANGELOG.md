@@ -7,6 +7,16 @@ field and are called out here.
 
 ## [Unreleased]
 ### Added
+- **HTML report filter toggles** (issue #17): a row of severity chips (error/warning/info, each
+  showing its count) and a rule `<select>` hide/show finding rows client-side; a model card whose
+  rows are all filtered out hides too. Implemented as a small inline vanilla-JS `<script>` + CSS —
+  the report stays a **self-contained, offline single file** (inline CSS, base64 logo, no CDN, no
+  framework). The script is only emitted when there are findings to filter. Presentation only:
+  JSON contract and fingerprints unchanged.
+- **Agent-review rows are locatable** (issue #17): each agent-review row in the HTML *and* console
+  reports now names its `model` and `file:line` (the data was always on `AgentReviewItem`; the
+  renderers dropped it) — on a multi-model estate the rows were impossible to place. A model-level
+  item (object == model) doesn't repeat the name.
 - **Per-rule count table in the SUMMARY** (issue #15): the console `SUMMARY` panel, the Markdown
   report, and the HTML report each gain a **Findings by rule** table (count, severity, rule id;
   sorted count desc then rule id — the family's shared format, twin: coop-sql-review#18) plus a

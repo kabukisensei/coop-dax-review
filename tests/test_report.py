@@ -229,3 +229,48 @@ def test_html_has_findings_by_rule_table():
     assert "DAX-MEASURE-CATEGORY" in out
     assert "enabled: false" in out
     assert "http://" not in out and "https://" not in out  # still offline
+
+
+# ---- issue #17: HTML severity/rule filters + locatable agent-review rows
+
+
+def test_html_has_filter_bar_and_inline_script():
+    out = to_html(_multi_rule_result(), version="0.1.0", standards=STANDARDS)
+    assert 'class="filters"' in out
+    assert 'data-sev="warning"' in out and 'data-rule="DAX-MEASURE-CATEGORY"' in out
+    assert 'id="rulefilter"' in out
+    assert '<option value="DAX-VAR-RETURN">' in out
+    assert "<script>" in out  # small inline vanilla JS
+    # still a self-contained offline single file: no CDN, no framework, no URLs
+    assert "http://" not in out and "https://" not in out
+
+
+def test_html_no_filter_bar_when_clean():
+    out = to_html(Result(models_checked=1), version="0.1.0", standards=STANDARDS)
+    assert 'class="filters"' not in out
+    assert "<script>" not in out  # no dead script on a clean report
+
+
+def test_html_agent_row_has_model_and_file_line():
+    out = to_html(_result(), version="0.1.0", standards=STANDARDS)
+    agent = out[out.index("Agent review") :]
+    assert "Sales" in agent  # the model name
+    assert "tables/FactSales.tmdl:40" in agent  # file:line
+    assert "[Sales: Total]" in agent  # the object is still there
+
+
+def test_html_model_level_agent_row_skips_redundant_object():
+    result = Result(
+        agent_review=[AgentReviewItem("DAX-VALIDATION", "Sales", "model.tmdl", "Sales", 0, "note", "§11")],
+        models_checked=1,
+    )
+    out = to_html(result, version="0.1.0", standards=STANDARDS)
+    agent = out[out.index("Agent review") :]
+    # model shown once, not "Sales · Sales ·"
+    assert agent.count("Sales &middot;") == 1
+
+
+def test_console_agent_row_has_model_and_file_line():
+    text = "\n".join(console_lines(_result()))
+    agent = text[text.index("Agent review") :]
+    assert "Sales - tables/FactSales.tmdl:40" in agent
