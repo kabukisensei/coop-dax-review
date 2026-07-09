@@ -148,7 +148,7 @@ Agent-judgment rules — the tool detects the construct but emits to the JSON `a
 | `DAX-STAR-SCHEMA` | 6 | whether a snowflake chain should be flattened to a star |
 | `DAX-CONTEXT-TRANSITION` | 9 | whether an iterator's context transition is intended/correct |
 | `DAX-SIMPLE-FUNCTIONS` | 10 | whether a CALCULATE-heavy measure could use simpler functions |
-| `DAX-VALIDATION` | 11 | whether the §11 validation checklist was run for a non-trivial measure |
+| `DAX-VALIDATION` | 11 | whether the §11 validation checklist was run (one model-level item counting the non-trivial measures) |
 | `DAX-IMPLICIT-MEASURE` | 20 | whether a visible auto-aggregating numeric column should become an explicit measure |
 
 See `RULES.md` for the full taxonomy. `docs/standards.md` §14–§20 are adopted Microsoft/Tabular

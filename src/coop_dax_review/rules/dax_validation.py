@@ -8,7 +8,13 @@ To avoid nagging on every aggregation, detection is scoped to measures that
 are non-trivial enough to be worth a deliberate validation pass: those that
 use time intelligence (TIME_INTEL_FUNCS), use CALCULATE/CALCULATETABLE, or
 carry two or more VARs. A trivial aggregation (e.g. a bare ``SUM`` with no
-filters) is left silent. We emit exactly ONE item per qualifying measure.
+filters) is left silent.
+
+We emit exactly ONE item per MODEL (issue #16). The per-measure form repeated
+an identical, un-actionable "confirm §11 was performed" note for every
+non-trivial measure — 163 of 216 agent items on a real estate — burying the
+genuinely reviewable items. The model-level item keeps the checklist nudge
+(with the qualifying-measure count and a few example names) without the flood.
 """
 
 from __future__ import annotations
@@ -23,32 +29,34 @@ from coop_dax_review.rules.helpers import (
 )
 
 _CALCULATE_FUNCS = frozenset({"calculate", "calculatetable"})
+_EXAMPLES_SHOWN = 3
 
 
 def detect(ctx: RuleContext) -> list[AgentReviewItem]:
-    items: list[AgentReviewItem] = []
+    non_trivial: list[str] = []
     for measure in ctx.catalog.measures:
         text = masked(measure)
         funcs = function_names(text)
-        non_trivial = (
-            bool(funcs & TIME_INTEL_FUNCS) or bool(funcs & _CALCULATE_FUNCS) or count_vars(text) >= 2
+        if bool(funcs & TIME_INTEL_FUNCS) or bool(funcs & _CALCULATE_FUNCS) or count_vars(text) >= 2:
+            non_trivial.append(measure.name)
+    if not non_trivial:
+        return []
+    count = len(non_trivial)
+    examples = ", ".join(f"[{name}]" for name in non_trivial[:_EXAMPLES_SHOWN])
+    if count > _EXAMPLES_SHOWN:
+        examples += ", ..."
+    label = "non-trivial measure" if count == 1 else "non-trivial measures"
+    return [
+        ctx.review(
+            object=ctx.model,
+            note=(
+                f"{count} {label} (e.g. {examples}) — confirm the §11 validation was "
+                "performed for each: test the base measure with no filters, test "
+                "with/without key slicers, cover edge cases (blank/zero/no rows), and "
+                "compare against known control totals."
+            ),
         )
-        if not non_trivial:
-            continue
-        items.append(
-            ctx.review(
-                object=f"[{measure.name}]",
-                file=measure.file,
-                line=measure.line,
-                note=(
-                    "non-trivial measure — confirm the §11 validation was performed: "
-                    "test the base measure with no filters, test with/without key slicers, "
-                    "cover edge cases (blank/zero/no rows), and compare against known "
-                    "control totals."
-                ),
-            )
-        )
-    return items
+    ]
 
 
 RULE = Rule(

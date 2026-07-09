@@ -37,7 +37,7 @@ storage mode); `agent` = judgment → emitted in `agent_review`. **Tier 1** = bu
 | `DAX-STAR-SCHEMA` | 6 | whether a snowflake *should* be flattened is a modeling call. |
 | `DAX-CONTEXT-TRANSITION` | 9 | whether an iterator's context transition is *wrong* needs intent. |
 | `DAX-SIMPLE-FUNCTIONS` | 10 | "prefer simple functions / CALCULATE only when needed" is stylistic judgment. |
-| `DAX-VALIDATION` | 11 | base/slicer/edge-case/control-total validation is a process, not static. |
+| `DAX-VALIDATION` | 11 | base/slicer/edge-case/control-total validation is a process, not static. Emits ONE model-level item (object = model name) with the non-trivial-measure count + example names — never one per measure. |
 | `DAX-IMPLICIT-MEASURE` | 20 | whether a visible auto-aggregating column should become an explicit measure is a modeling call. |
 
 ## Implementation notes

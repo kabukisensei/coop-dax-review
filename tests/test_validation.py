@@ -16,7 +16,7 @@ def test_is_agent_rule():
     assert mod.RULE.category == "validation"
 
 
-def test_time_intel_fires(make_catalog):
+def test_time_intel_fires_one_model_item(make_catalog):
     cat = make_catalog(
         measures=[
             (
@@ -26,7 +26,10 @@ def test_time_intel_fires(make_catalog):
         ]
     )
     items = _run(cat)
-    assert [i.object for i in items] == ["[Sales: Revenue YTD]"]
+    # issue #16: ONE model-level item (object = model name), naming the measure.
+    assert [i.object for i in items] == ["Test"]
+    assert "1 non-trivial measure " in items[0].note
+    assert "[Sales: Revenue YTD]" in items[0].note
 
 
 def test_calculate_fires(make_catalog):
@@ -63,16 +66,25 @@ def test_single_var_trivial_silent(make_catalog):
     assert _run(cat) == []
 
 
-def test_one_item_per_measure(make_catalog):
-    # A measure that qualifies on multiple grounds yields exactly one item.
-    dax = (
-        "VAR Cur = CALCULATE([Sales: Total Revenue], DATESYTD(DimDate[Date]))\n"
-        "VAR Prev = CALCULATE([Sales: Total Revenue], SAMEPERIODLASTYEAR(DimDate[Date]))\n"
-        "RETURN Cur - Prev"
+def test_many_measures_collapse_to_one_item(make_catalog):
+    # issue #16: N qualifying measures -> ONE item carrying the count and the
+    # first few names (ellipsized) — never one item per measure.
+    calc = "CALCULATE([Sales: Total Revenue], TRUE())"
+    cat = make_catalog(
+        measures=[
+            ("Sales: A", calc),
+            ("Sales: B", calc),
+            ("Sales: C", calc),
+            ("Sales: D", calc),
+            ("Sales: Trivial", "SUM(FactSales[Revenue])"),
+        ]
     )
-    cat = make_catalog(measures=[("Sales: Revenue YTD", dax)])
     items = _run(cat)
     assert len(items) == 1
+    note = items[0].note
+    assert "4 non-trivial measures" in note
+    assert "[Sales: A], [Sales: B], [Sales: C], ..." in note
+    assert "[Sales: D]" not in note  # only the first few are named
 
 
 def test_keyword_in_comment_silent(make_catalog):
@@ -82,8 +94,9 @@ def test_keyword_in_comment_silent(make_catalog):
     assert _run(cat) == []
 
 
-def test_line_and_file(make_catalog):
+def test_model_level_file_and_line(make_catalog):
+    # The single item is model-level: the model's primary file, no line anchor.
     cat = make_catalog(measures=[("M", "CALCULATE(SUM(FactSales[Revenue]), TRUE())")])
     item = _run(cat)[0]
-    assert item.line == 1
+    assert item.line == 0
     assert item.file == cat.file

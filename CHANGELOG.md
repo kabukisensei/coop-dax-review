@@ -6,6 +6,15 @@ The JSON output is a machine contract (`schema_version`); breaking changes to it
 field and are called out here.
 
 ## [Unreleased]
+### Changed
+- **`DAX-VALIDATION` collapses to ONE model-level agent-review item** (issue #16). The per-measure
+  form repeated an identical, un-actionable "confirm §11 validation was performed" note for every
+  non-trivial measure (163 of 216 agent items on a real five-model estate), burying the genuinely
+  reviewable items. The rule now emits a single item per model (`object` = model name) carrying
+  the qualifying-measure count and the first few measure names. **Baseline note:** the old
+  per-measure fingerprints disappear and one new model-level fingerprint per model appears —
+  regenerate baselines that pinned `DAX-VALIDATION` items (`--write-baseline`), or drop those
+  entries (stale ones are reported as `baseline_stale`).
 ### Fixed
 - **Multi-line calculated-column findings and syntax errors now point at the right line**
   (issue #13). `Column` gains `dax_line` (same semantics as `Measure.dax_line`): the TMDL parser
