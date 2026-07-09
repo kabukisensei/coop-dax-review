@@ -77,9 +77,12 @@ coop-dax-review check . --format markdown -o report.md
 ```
 
 The default `--format text` is a **sectioned terminal report**: a banner, one section per model with
-`ERROR`/`WARN`/`INFO` severity badges, and a `SUMMARY` panel. It's colorized automatically when
-you're at a terminal and falls back to plain text when piped or redirected (override with
-`--color`/`--no-color`; `NO_COLOR` is respected).
+`ERROR`/`WARN`/`INFO` severity badges, and a `SUMMARY` panel — including a **Findings by rule**
+count table (count desc) so you can see at a glance which rules dominate and tune or disable them
+in `rules.yml`; the Markdown and HTML reports carry the same table. It's colorized automatically
+when you're at a terminal and falls back to plain text when piped or redirected (override with
+`--color`/`--no-color`; `NO_COLOR` is respected). On a large legacy estate (50+ findings, no
+baseline in play) a one-line stderr hint points at `--write-baseline` ratcheting.
 
 `--format html` produces a self-contained, branded HTML report (inline CSS + embedded logo, no
 network). It is always written to a file — `coop-dax-review-report.html` by default, or wherever
@@ -203,8 +206,10 @@ so a triaged item stays silenced everywhere:
       note: intentional many-to-many, reviewed 2026-07
   ```
   You don't have to hand-copy fingerprints: run `check --save-ignores` and, at an interactive
-  terminal, you get a checkbox of this run's findings (all unchecked — opt in to the ones you want
-  gone); the picks are appended to the config file **this run read** (so a team config beside the
+  terminal, you get a checkbox of this run's findings **grouped by rule × model** (a header per
+  group, an "ignore all N" row for multi-finding groups, individual findings nested — all
+  unchecked, opt in to the ones you want gone); the picks are appended to the config file **this
+  run read** (so a team config beside the
   standards file, or one found in a parent directory, is updated in place rather than shadowed by
   a new `./rules.yml`). A `coop-dax-review.yml` or `rules.yml` in your current directory (or any
   parent up to the repo root) is auto-discovered with no `--config` flag, so the loop is just

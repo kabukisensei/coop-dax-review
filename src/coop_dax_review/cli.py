@@ -78,6 +78,11 @@ _SEVERITY_CHOICE = click.Choice(SEVERITIES)
 # re-openable name in the working directory (overwritten on each run).
 _DEFAULT_HTML_NAME = "coop-dax-review-report.html"
 
+# Above this many findings with no --baseline in play, nudge a first-time run
+# toward the ratcheting workflow (issue #15) — the intended adoption path for a
+# legacy estate is baseline-then-fix-new, not read-a-6000-line-wall.
+_BASELINE_HINT_THRESHOLD = 50
+
 # This package's directory: config writes must never land inside the installed
 # package (where the bundled-standards sibling rules.yml would live).
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -310,22 +315,58 @@ def _finding_ignore_entry(f):
     return {"fingerprint": f.fingerprint(), "rule": f.rule_id, "where": where}
 
 
+def _ignore_picker_choices(findings, questionary):
+    """The ``--save-ignores`` checkbox, grouped by rule x model (issue #15): a
+    separator heads each group, an "ignore all N" parent row precedes the
+    individual findings of a multi-finding group, and every row starts
+    UNchecked (opt-in). Choice VALUES are lists of findings so a parent pick
+    means the whole group; the caller flattens + dedupes. A flat 500-row list
+    was unusable at estate scale — the grouped form scales with rule count."""
+    groups: dict[tuple[str, str], list] = {}
+    for f in findings:
+        groups.setdefault((f.rule_id, f.model), []).append(f)
+    choices: list = []
+    for (rule_id, model), members in sorted(groups.items()):
+        n = len(members)
+        choices.append(questionary.Separator(f"-- {rule_id} - {model} ({n} finding{'s' if n != 1 else ''})"))
+        if n > 1:
+            choices.append(
+                questionary.Choice(
+                    title=f"ignore all {n} {rule_id} findings in {model}", value=members, checked=False
+                )
+            )
+        for f in members:
+            choices.append(
+                questionary.Choice(title="  " + _finding_ignore_label(f), value=[f], checked=False)
+            )
+    return choices
+
+
 def _pick_findings_to_ignore(findings):
-    """Checkbox of findings to ignore (all start UNchecked -> opt-in). Returns the
-    chosen findings, or [] if questionary is unavailable / nothing picked. Mirrors
+    """Checkbox of findings to ignore (grouped by rule x model, all start
+    UNchecked -> opt-in). Returns the chosen findings (flattened, deduped by
+    fingerprint), or [] if questionary is unavailable / nothing picked. Mirrors
     the error-handling of the existing _interactive_pick_paths helper."""
     try:
         import questionary
     except ImportError:
         return []
-    choices = [questionary.Choice(title=_finding_ignore_label(f), value=f, checked=False) for f in findings]
+    choices = _ignore_picker_choices(findings, questionary)
     try:
         selected = questionary.checkbox(
             "Findings to add to the ignore list (SPACE to toggle, ENTER to confirm):", choices=choices
         ).ask()
     except (OSError, EOFError):
         return []
-    return list(selected or [])
+    picked: list = []
+    seen: set[str] = set()
+    for group in selected or []:
+        for f in group:
+            fingerprint = f.fingerprint()
+            if fingerprint not in seen:
+                seen.add(fingerprint)
+                picked.append(f)
+    return picked
 
 
 def _save_ignores_interactive(findings, config_path, cfg_path: Path):
@@ -778,6 +819,17 @@ def check(
             click.echo(f"Diagnostics log written to {log_file}", err=True)
         except OSError as exc:
             raise click.ClickException(f"could not write log file {log_file}: {exc}") from exc
+
+    # First-run-on-a-legacy-estate nudge (issue #15): with many findings and no
+    # baseline in play, point at the ratcheting workflow. One stderr line, never
+    # in the report itself.
+    if len(result.findings) > _BASELINE_HINT_THRESHOLD and not baseline_path and not write_baseline_path:
+        click.echo(
+            f"Hint: {len(result.findings)} findings. For a legacy estate, ratchet instead of reading "
+            "the wall: `--write-baseline baseline.json` once, then `--baseline baseline.json` on "
+            "later runs surfaces only NEW findings.",
+            err=True,
+        )
 
     if save_ignores:
         _save_ignores_interactive(result.findings, config_path, cfg_path)

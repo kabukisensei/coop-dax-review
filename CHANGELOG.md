@@ -6,6 +6,21 @@ The JSON output is a machine contract (`schema_version`); breaking changes to it
 field and are called out here.
 
 ## [Unreleased]
+### Added
+- **Per-rule count table in the SUMMARY** (issue #15): the console `SUMMARY` panel, the Markdown
+  report, and the HTML report each gain a **Findings by rule** table (count, severity, rule id;
+  sorted count desc then rule id — the family's shared format, twin: coop-sql-review#18) plus a
+  closing hint that a noisy rule can be disabled/tuned in `rules.yml`. Presentation only — the
+  JSON contract is unchanged.
+- **`--save-ignores` picker is grouped by rule × model** (issue #15): a separator heads each
+  group, multi-finding groups get an "ignore all N" parent row, and individual findings sit
+  nested below — a flat 500-row checkbox was unusable at estate scale. Parent+child overlap is
+  deduped by fingerprint.
+- **Baseline hint for legacy estates** (issue #15): when a run reports more than 50 findings and
+  no `--baseline`/`--write-baseline` is in play, one stderr line points at the
+  `--write-baseline baseline.json` ratcheting workflow (never printed into the report itself).
+  The earlier `--save-ignores` write-back-shadowing part of this issue was already fixed in
+  0.12.0 (core `config_write_path`).
 ### Changed
 - **`DAX-VALIDATION` collapses to ONE model-level agent-review item** (issue #16). The per-measure
   form repeated an identical, un-actionable "confirm §11 validation was performed" note for every

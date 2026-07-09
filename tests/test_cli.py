@@ -458,8 +458,11 @@ def test_save_ignores_full_loop_then_silenced(tmp_path, monkeypatch):
         def __init__(self, *a, **k):
             self._values = k.get("choices", [])
 
-        def ask(self):  # the user checks every offered finding
-            return list(self._values)
+        def ask(self):
+            # The user checks every offered row. Real questionary returns only
+            # Choice VALUES (lists of findings since the issue #15 grouping) —
+            # never the Separator group headers, so filter those out here.
+            return [v for v in self._values if isinstance(v, list)]
 
     import questionary
 
@@ -593,8 +596,10 @@ def test_save_ignores_writes_back_to_the_discovered_config(tmp_path, monkeypatch
         def __init__(self, *a, **k):
             self._values = k.get("choices", [])
 
-        def ask(self):  # the user checks every offered finding
-            return list(self._values)
+        def ask(self):
+            # Only Choice VALUES come back from real questionary (lists of
+            # findings since the issue #15 grouping), never the Separators.
+            return [v for v in self._values if isinstance(v, list)]
 
     import questionary
 
@@ -605,3 +610,86 @@ def test_save_ignores_writes_back_to_the_discovered_config(tmp_path, monkeypatch
     assert result.exit_code == 0
     assert "ignore:" in cfg.read_text(encoding="utf-8")  # written back to what was read
     assert not (workdir / "rules.yml").exists()  # no shadowing ./rules.yml appeared
+
+
+# ---- issue #15: baseline hint + grouped --save-ignores picker
+
+
+def test_baseline_hint_when_many_findings(tmp_path, monkeypatch):
+    # Above the threshold with no baseline flags -> one stderr nudge toward
+    # the ratcheting workflow (--write-baseline / --baseline).
+    from coop_dax_review import cli as climod
+
+    monkeypatch.setattr(climod, "_BASELINE_HINT_THRESHOLD", 0)
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
+    assert "--write-baseline" in result.stderr
+    assert "--write-baseline" not in result.stdout  # a hint, never report content
+
+
+def test_no_baseline_hint_when_baseline_in_play(tmp_path, monkeypatch):
+    from coop_dax_review import cli as climod
+
+    monkeypatch.setattr(climod, "_BASELINE_HINT_THRESHOLD", 0)
+    base = tmp_path / "baseline.json"
+    written = CliRunner().invoke(cli, ["check", str(FIXTURES), "--write-baseline", str(base)])
+    assert "Hint:" not in written.stderr  # writing the baseline IS the workflow
+    reran = CliRunner().invoke(cli, ["check", str(FIXTURES), "--baseline", str(base)])
+    assert "Hint:" not in reran.stderr
+
+
+def test_no_baseline_hint_under_threshold():
+    # The real threshold (50) is far above the fixture estate's finding count.
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
+    assert "Hint:" not in result.stderr
+
+
+def test_save_ignores_picker_groups_by_rule_and_model():
+    # issue #15: the picker is grouped -- a Separator heads each rule x model
+    # group, multi-finding groups get an "ignore all N" parent whose value is
+    # the whole group, and every value is a LIST of findings.
+    import questionary
+
+    from coop_dax_review.cli import _ignore_picker_choices
+    from coop_dax_review.finding import Finding
+
+    def f(rule, model, obj):
+        return Finding(rule, "warning", model, "t.tmdl", 1, obj, f"m {obj}", "§1")
+
+    findings = [
+        f("DAX-A", "M1", "[x]"),
+        f("DAX-A", "M1", "[y]"),
+        f("DAX-B", "M1", "[z]"),
+    ]
+    choices = _ignore_picker_choices(findings, questionary)
+    separators = [c for c in choices if isinstance(c, questionary.Separator)]
+    picks = [c for c in choices if not isinstance(c, questionary.Separator)]
+    assert len(separators) == 2  # one per rule x model group
+    assert "DAX-A" in separators[0].title and "(2 findings)" in separators[0].title
+    parent = picks[0]
+    assert "ignore all 2 DAX-A" in parent.title
+    assert parent.value == findings[:2]  # the whole group
+    assert all(isinstance(c.value, list) for c in picks)
+    assert not any(c.checked for c in picks)  # opt-in: everything starts unchecked
+    # the single-finding DAX-B group has NO "ignore all" parent
+    assert not any("ignore all 1" in c.title for c in picks)
+
+
+def test_pick_findings_dedupes_parent_and_child_overlap(monkeypatch):
+    # Selecting a group's parent AND one of its members must not double-add.
+    import questionary
+
+    from coop_dax_review import cli as climod
+    from coop_dax_review.finding import Finding
+
+    def f(obj):
+        return Finding("DAX-A", "warning", "M1", "t.tmdl", 1, obj, f"m {obj}", "§1")
+
+    findings = [f("[x]"), f("[y]")]
+
+    class _FakeCheckbox:
+        def ask(self):
+            return [findings, [findings[0]]]  # the parent group + one member again
+
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeCheckbox())
+    picked = climod._pick_findings_to_ignore(findings)
+    assert picked == findings  # deduped by fingerprint, order preserved

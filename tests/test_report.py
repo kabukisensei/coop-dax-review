@@ -177,3 +177,55 @@ def test_markdown_and_html_render_escaped_diagnostics():
     assert "parse_failed" in out
     assert "bad &lt;x&gt; &amp; y" in out  # HTML-escaped
     assert "bad <x> & y" not in out
+
+
+# ---- issue #15: per-rule count table in the SUMMARY (console + markdown + HTML)
+
+
+def _multi_rule_result() -> Result:
+    def f(rule, sev, obj):
+        return Finding(rule, sev, "Sales", "t.tmdl", 1, obj, f"msg for {obj}", "§1")
+
+    return Result(
+        findings=[
+            f("DAX-MEASURE-CATEGORY", "warning", "[A]"),
+            f("DAX-MEASURE-CATEGORY", "warning", "[B]"),
+            f("DAX-MEASURE-CATEGORY", "warning", "[C]"),
+            f("DAX-VAR-RETURN", "info", "[D]"),
+        ],
+        models_checked=1,
+    )
+
+
+def test_console_summary_has_per_rule_counts_sorted_desc():
+    text = "\n".join(console_lines(_multi_rule_result()))
+    assert "Findings by rule" in text
+    lines = text.splitlines()
+    idx = next(i for i, line in enumerate(lines) if "Findings by rule" in line)
+    table = [line for line in lines[idx + 1 :] if line.strip() and line.lstrip()[0].isdigit()]
+    assert "3" in table[0] and "DAX-MEASURE-CATEGORY" in table[0]  # count desc
+    assert "1" in table[1] and "DAX-VAR-RETURN" in table[1]
+    assert "enabled: false" in text  # the closing rules.yml hint
+
+
+def test_console_no_per_rule_table_when_clean():
+    assert "Findings by rule" not in "\n".join(console_lines(Result(models_checked=1)))
+
+
+def test_markdown_has_findings_by_rule_table():
+    md = to_markdown(_multi_rule_result(), version="0.1.0", standards=STANDARDS)
+    assert "## Findings by rule" in md
+    assert "| 3 | warning | `DAX-MEASURE-CATEGORY` |" in md
+    assert "| 1 | info | `DAX-VAR-RETURN` |" in md
+    assert md.index("| 3 |") < md.index("| 1 |")  # sorted by count desc
+    assert "enabled: false" in md
+
+
+def test_html_has_findings_by_rule_table():
+    out = to_html(_multi_rule_result(), version="0.1.0", standards=STANDARDS)
+    assert "Findings by rule" in out
+    assert '<table class="byrule">' in out
+    assert '<td class="count">3</td>' in out
+    assert "DAX-MEASURE-CATEGORY" in out
+    assert "enabled: false" in out
+    assert "http://" not in out and "https://" not in out  # still offline

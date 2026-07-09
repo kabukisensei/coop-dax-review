@@ -40,6 +40,23 @@ from coop_dax_review.finding import SEVERITIES
 
 TOOL = "coop-dax-review"
 
+# Closing hint under the per-rule count table (issue #15): the actionable next
+# step when one rule dominates is per-rule, so say so where the counts are.
+_RULE_TUNE_HINT = 'disable a noisy rule in rules.yml ("DAX-X: {enabled: false}") or tune its severity there'
+
+
+def _rule_counts(findings) -> list[tuple[str, str, int]]:
+    """Per-rule finding counts as ``(rule_id, severity, count)`` rows, sorted by
+    count desc then rule id (deterministic; the family's SUMMARY-table order —
+    twin: coop-sql-review#18). A rule that emitted mixed severities (a per-
+    finding override) yields one row per severity."""
+    counts: dict[tuple[str, str], int] = {}
+    for f in findings:
+        key = (f.rule_id, f.severity)
+        counts[key] = counts.get(key, 0) + 1
+    return sorted(((r, s, n) for (r, s), n in counts.items()), key=lambda t: (-t[2], t[0], t[1]))
+
+
 # The agent JSON contract version. Bump on any breaking change to the shape so a
 # consumer can pin/branch on it; additive fields don't require a bump.
 # 2: fingerprints dropped the cwd-relative display path from their identity
@@ -208,6 +225,21 @@ def console_lines(
         if diag["error"] or diag["warning"]:
             bits = ", ".join(f"{diag[s]} {s}" for s in ("error", "warning") if diag[s])
             lines.append(" " * 13 + sty(f"diagnostics: {bits}", "dim", color=color))
+        # Per-rule count table (issue #15): which rules dominate, count desc,
+        # so triage doesn't require piping the JSON through jq.
+        rule_rows = _rule_counts(result.findings)
+        if rule_rows:
+            lines.append("")
+            lines.append("  " + sty("Findings by rule", "bold", color=color))
+            for rule_id, rule_severity, count in rule_rows:
+                badge = sty(
+                    BADGE.get(rule_severity, "     "),
+                    BADGE_COLOR.get(rule_severity, "blue"),
+                    "bold",
+                    color=color,
+                )
+                lines.append(f"   {count:>5}  {badge} " + sty(rule_id, "bold", color=color))
+            lines.append("  " + sty(_RULE_TUNE_HINT, "dim", color=color))
     lines.append(sty(bar, "cyan", color=color))
     lines.append("  " + sty("Advisory only - nothing was changed or blocked.", "dim", color=color))
     return lines
@@ -235,6 +267,18 @@ def to_markdown(result: Result, *, version: str, standards: dict[str, str]) -> s
         lines.append(f"- agent review: {len(result.agent_review)} construct(s) need judgment")
     lines.append("")
     lines.append("_Advisory only - nothing was changed or blocked._")
+
+    rule_rows = _rule_counts(result.findings)
+    if rule_rows:
+        lines.append("")
+        lines.append("## Findings by rule")
+        lines.append("")
+        lines.append("| Count | Severity | Rule |")
+        lines.append("|---:|---|---|")
+        for rule_id, rule_severity, count in rule_rows:
+            lines.append(f"| {count} | {rule_severity} | `{rule_id}` |")
+        lines.append("")
+        lines.append(f"_{_RULE_TUNE_HINT}._")
 
     by_model: dict[str, list] = {}
     for finding in result.findings:
@@ -281,6 +325,31 @@ def _finding_row(f) -> str:
     )
 
 
+# Tool-local additions on top of core's shared HTML_STYLE (still one inline
+# <style>, fully offline): the "Findings by rule" summary table (issue #15).
+_EXTRA_STYLE = """
+.byrule { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.byrule td { padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.byrule tr:last-child td { border-bottom: 0; }
+.byrule .count { font-family: var(--mono); text-align: right; width: 5ch; font-weight: 600; }
+.byrule .rule { font-family: var(--mono); font-weight: 600; }
+.hint { color: var(--muted); font-size: 0.8rem; padding: 10px 16px; border-top: 1px solid var(--line); }
+"""
+
+
+def _byrule_card(findings) -> str:
+    """The per-rule count table as one card (issue #15), or ``""``."""
+    rows = _rule_counts(findings)
+    if not rows:
+        return ""
+    body = "".join(
+        f'<tr><td class="count">{n}</td><td>{chip(s)}</td><td class="rule">{esc(r)}</td></tr>'
+        for r, s, n in rows
+    )
+    hint = f'<div class="hint">{esc(_RULE_TUNE_HINT)}.</div>'
+    return f'<h2>Findings by rule</h2><div class="card"><table class="byrule">{body}</table>{hint}</div>'
+
+
 def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
     """A self-contained, clean HTML report (inline CSS, no network).
 
@@ -295,7 +364,7 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
         '<html lang="en"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Cooptimize DAX Review</title>",
-        f"<style>{HTML_STYLE}</style>",
+        f"<style>{HTML_STYLE}{_EXTRA_STYLE}</style>",
         '</head><body><div class="wrap">',
         f'<header class="brand">{logo_img}<div>'
         "<h1>DAX Review</h1>"
@@ -315,6 +384,10 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
         + "</div>",
         '<div class="advisory">Advisory only - nothing was changed or blocked.</div>',
     ]
+
+    byrule = _byrule_card(result.findings)
+    if byrule:
+        parts.append(byrule)
 
     by_model: dict[str, list] = {}
     for finding in result.findings:
