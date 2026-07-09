@@ -1,3 +1,3 @@
 """coop-dax-review: offline, advisory DAX/model standards linter for Power BI."""
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
