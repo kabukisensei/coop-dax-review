@@ -95,6 +95,34 @@ def test_filter_outside_calculate_silent(make_catalog):
     assert _run(cat) == []
 
 
+def test_iterator_table_arg_in_expression_silent(make_catalog):
+    # Issue #11: FILTER as an iterator's table argument inside CALCULATE's
+    # FIRST (expression) argument is the endorsed §9 idiom — never a §4 smell.
+    dax = (
+        "CALCULATE(\n"
+        "    SUMX(FILTER(DimCustomer, DimCustomer[CustomerId] > 0), FactSales[Revenue]),\n"
+        "    FactSales[Revenue] > 100\n"
+        ")"
+    )
+    cat = make_catalog(measures=[("Sales: Q", dax)], tables=_TABLES)
+    assert _run(cat) == []
+
+
+def test_iterator_in_expression_plus_filter_arg_fires_once(make_catalog):
+    # Issue #11: the FILTER in the expression argument stays silent, while the
+    # FILTER used as a direct filter argument still fires — with the right line.
+    dax = (
+        "CALCULATE(\n"
+        "    SUMX(FILTER(DimCustomer, DimCustomer[CustomerId] > 0), FactSales[Revenue]),\n"
+        '    FILTER(DimCustomer, DimCustomer[MarketSegment] = "Enterprise")\n'
+        ")"
+    )
+    cat = make_catalog(measures=[("Sales: Q", dax)], tables=_TABLES)
+    findings = _run(cat)
+    assert len(findings) == 1
+    assert findings[0].line == 3  # the filter-argument FILTER, not the iterator's
+
+
 def test_keyword_in_comment_silent(make_catalog):
     # Masking: the FILTER lives in a comment, so nothing fires.
     dax = (

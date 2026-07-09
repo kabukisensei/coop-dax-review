@@ -5,11 +5,14 @@ table in ``FILTER``. ``FILTER(DimCustomer, DimCustomer[Seg] = "X")`` materialise
 the entire table and is slower than the equivalent ``DimCustomer[Seg] = "X"``.
 
 We only flag the *exact* avoidable shape and nothing else (precision over
-recall): a ``FILTER`` inside a ``CALCULATE`` whose first argument is EXACTLY a
-bare table reference and whose predicate is a single simple comparison over that
-same table's columns. ``FILTER(ALL(...))`` / ``FILTER(VALUES(...))`` / a filter
-over an expression, a multi-table predicate, a logical ``&&``/``||`` predicate,
-or a predicate referencing a measure are all legitimate and left alone.
+recall): a ``FILTER`` inside a CALCULATE **filter argument** (top-level
+arguments after the first — the first is the evaluated expression, where
+``SUMX(FILTER(...), ...)`` is the endorsed §9 iterator idiom, never a §4
+smell) whose first argument is EXACTLY a bare table reference and whose
+predicate is a single simple comparison over that same table's columns.
+``FILTER(ALL(...))`` / ``FILTER(VALUES(...))`` / a filter over an expression,
+a multi-table predicate, a logical ``&&``/``||`` predicate, or a predicate
+referencing a measure are all legitimate and left alone.
 """
 
 from __future__ import annotations
@@ -67,33 +70,42 @@ def check(ctx: RuleContext) -> list[Finding]:
         for calc in _CALC_RE.finditer(text):
             args = arg_span(text, calc.end() - 1)
             base = calc.end() - 1  # offset of the CALCULATE '(' within `text`
-            for _name, off, fargs in iter_calls(args, _FILTER):
-                parts = split_top_commas(fargs)
-                if len(parts) < 2:
-                    continue
-                first = parts[0].strip()
-                m = _BARE_TABLE_RE.match(first)
-                if not m:
-                    continue  # not a bare table (e.g. ALL(...)/VALUES(...)/expr)
-                token = m.group(1) or m.group(2)
-                table = normalize(token)
-                if table not in ctx.catalog.table_names:
-                    continue
-                predicate = ",".join(parts[1:])
-                if not _simple_table_predicate(predicate, table, ctx):
-                    continue
-                filter_offset = base + 1 + off
-                findings.append(
-                    ctx.finding(
-                        object=f"[{measure.name}]",
-                        file=measure.file,
-                        line=line_at(measure, filter_offset),
-                        message=(
-                            f"FILTER over whole table '{token}' in CALCULATE — a plain column "
-                            f"filter ({token}[...] = ...) is simpler and faster (§4)."
-                        ),
+            # Scan the filter arguments only (top-level args after the first):
+            # a FILTER inside the *expression* argument is an iterator's table
+            # argument (SUMX(FILTER(...), ...)) — the endorsed §9 idiom, not a
+            # §4 filter-argument smell. Offsets are rebased per argument, like
+            # the DAX-KEEPFILTERS-NEEDED per-argument scan.
+            calc_args = split_top_commas(args)
+            arg_start = len(calc_args[0]) + 1  # offset of the 2nd arg within `args`
+            for calc_arg in calc_args[1:]:
+                for _name, off, fargs in iter_calls(calc_arg, _FILTER):
+                    filter_offset = base + 1 + arg_start + off
+                    parts = split_top_commas(fargs)
+                    if len(parts) < 2:
+                        continue
+                    first = parts[0].strip()
+                    m = _BARE_TABLE_RE.match(first)
+                    if not m:
+                        continue  # not a bare table (e.g. ALL(...)/VALUES(...)/expr)
+                    token = m.group(1) or m.group(2)
+                    table = normalize(token)
+                    if table not in ctx.catalog.table_names:
+                        continue
+                    predicate = ",".join(parts[1:])
+                    if not _simple_table_predicate(predicate, table, ctx):
+                        continue
+                    findings.append(
+                        ctx.finding(
+                            object=f"[{measure.name}]",
+                            file=measure.file,
+                            line=line_at(measure, filter_offset),
+                            message=(
+                                f"FILTER over whole table '{token}' in CALCULATE — a plain column "
+                                f"filter ({token}[...] = ...) is simpler and faster (§4)."
+                            ),
+                        )
                     )
-                )
+                arg_start += len(calc_arg) + 1
     return findings
 
 

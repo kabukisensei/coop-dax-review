@@ -15,7 +15,7 @@ storage mode); `agent` = judgment → emitted in `agent_review`. **Tier 1** = bu
 | `DAX-MEASURE-CATEGORY` | 1 | measure name not `[Category: Name]` | warning | catalog | 1 |
 | `DAX-BIDI-RELATIONSHIP` | 7 | relationship with bidirectional cross-filter | warning | model | 1 |
 | `DAX-MARKED-DATE-TABLE` | 8 | time-intel funcs used (in a measure or calculated column) but no marked Date table | warning | model+text | 1 |
-| `DAX-FILTER-TABLE-IN-CALCULATE` | 4 | `CALCULATE(.., FILTER(<table>, <col predicate>))` where a boolean filter suffices | warning | text | 2 |
+| `DAX-FILTER-TABLE-IN-CALCULATE` | 4 | `FILTER(<table>, <col predicate>)` as a `CALCULATE` **filter argument** where a boolean filter suffices (a FILTER inside the first/expression argument — an iterator's table arg — is the §9 idiom, not flagged) | warning | text | 2 |
 | `DAX-VAR-RETURN` | 2 | non-trivial measure without `VAR`/`RETURN` | info | text | 2 |
 | `DAX-MEASURE-IN-ITERATOR` | 9 | measure ref inside `SUMX`/`AVERAGEX`/… (hidden context transition) | info | text+catalog | 2 |
 | `DAX-SNOWFLAKE` | 6 | dimension related to another dimension (snowflake chain) | info | model | 2 |

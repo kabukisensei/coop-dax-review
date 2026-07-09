@@ -5,6 +5,16 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [Unreleased]
+### Fixed
+- **`DAX-FILTER-TABLE-IN-CALCULATE` no longer flags a `FILTER` used as an iterator's table
+  argument** (issue #11). The scan is now scoped to the CALCULATE **filter arguments only**
+  (top-level arguments after the first, per-argument offset rebasing — the same shape as the
+  0.9.0 `DAX-KEEPFILTERS-NEEDED` fix), so the endorsed §9 idiom
+  `CALCULATE(SUMX(FILTER(Sales, ...), ...), pred)` stays silent while a `FILTER` passed as a
+  direct filter argument still fires. Surviving findings keep byte-identical messages/objects, so
+  fingerprints don't churn.
+
 ## [0.12.0] — 2026-07-09
 ### Added
 - **SARIF output** (`--format sarif`, plus a `--sarif FILE` extra sink that composes with any

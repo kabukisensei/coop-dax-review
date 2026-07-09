@@ -125,7 +125,7 @@ Run `coop-dax-review rules` for the live list. Deterministic rules (reported as 
 | `DAX-COLUMN-PREFIXED` | 1 | warning | bare `[X]` where `X` is a column (columns need `Table[X]`) |
 | `DAX-VAR-RETURN` | 2 | info | non-trivial measure with no `VAR`/`RETURN` structure |
 | `DAX-NO-NESTED-CALCULATE` | 3 | warning | `CALCULATE` nested *directly* inside `CALCULATE` (iterator-mediated per-row nesting is fine) |
-| `DAX-FILTER-TABLE-IN-CALCULATE` | 4 | warning | `FILTER(<table>, <col> = ...)` where a plain column filter suffices |
+| `DAX-FILTER-TABLE-IN-CALCULATE` | 4 | warning | `FILTER(<table>, <col> = ...)` as a CALCULATE filter argument where a plain column filter suffices |
 | `DAX-SNOWFLAKE` | 6 | info | a table with relationships chained through it (snowflake link) |
 | `DAX-BIDI-RELATIONSHIP` | 7 | warning | a bidirectional cross-filter relationship |
 | `DAX-MARKED-DATE-TABLE` | 8 | warning | time-intelligence used (in a measure or calculated column) but no marked Date table |
