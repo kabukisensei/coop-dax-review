@@ -5,7 +5,7 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
-## [Unreleased]
+## [0.12.0] — 2026-07-09
 ### Added
 - **SARIF output** (`--format sarif`, plus a `--sarif FILE` extra sink that composes with any
   `--format`, like `--html`/`--md`) via `coop-review-core` 0.4.0's shared `to_sarif` emitter — one
@@ -358,6 +358,7 @@ field and are called out here.
 - Initial release: 24 DAX/model-standard rules over TMDL/`.bim` Power BI semantic models, a human
   report, and the machine JSON contract for the company analytics agent. Offline, advisory, never blocks.
 
+[0.12.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.12.0
 [0.11.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.11.0
 [0.10.1]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.10.1
 [0.10.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.10.0
