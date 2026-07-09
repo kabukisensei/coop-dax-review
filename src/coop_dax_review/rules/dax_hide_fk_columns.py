@@ -4,7 +4,9 @@
 should be hidden so report authors don't drag a raw key onto a visual. By the
 catalog's convention the ``from`` side of a relationship is the many side, so we
 check each relationship's ``from_column`` and flag it when it resolves to a
-visible (not ``isHidden``) column. One finding per visible FK column.
+visible (not ``isHidden``) column. A column on a table that is itself hidden is
+effectively hidden — hiding a table removes all its fields from the report
+field list — so it is not flagged. One finding per visible FK column.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ def check(ctx: RuleContext) -> list[Finding]:
         if entry is None:
             continue  # FK column not in the catalog — can't tell
         table, column = entry
-        if not column.is_hidden:
+        if not (column.is_hidden or table.is_hidden):
             seen.add(key)
             findings.append(
                 ctx.finding(

@@ -1,0 +1,17 @@
+table CurrencyRates
+	isHidden
+	lineageTag: 30000000-0000-0000-0000-000000000001
+
+	measure 'Rates: Average Rate' = AVERAGE(CurrencyRates[Rate])
+		lineageTag: 30000000-0000-0000-0000-000000000002
+
+	column Rate
+		dataType: double
+		formatString: #,0.0000
+		lineageTag: 30000000-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: Rate
+
+	partition CurrencyRates = m
+		mode: import
+		source = "let Source = ... in Source"

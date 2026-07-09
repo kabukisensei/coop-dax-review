@@ -106,6 +106,7 @@ class Table:
     columns: list[Column] = field(default_factory=list)
     storage_mode: str = ""  # "import" | "directLake" | "directQuery" | "dual" | ""
     is_date_table: bool = False  # marked Date table (dataCategory Time or template)
+    is_hidden: bool = False  # table-level isHidden — hides ALL its columns/measures
     is_calculated: bool = False  # a calculated table (`table X = <DAX>`)
     expression: str = ""  # the DAX of a calculated table, if any
     dax_line: int = 0  # 1-based line where a calculated table's DAX body starts
@@ -148,6 +149,16 @@ class ModelCatalog:
     @cached_property
     def table_names(self) -> set[str]:
         return {normalize(t.name) for t in self.tables}
+
+    @cached_property
+    def hidden_tables(self) -> set[str]:
+        """Normalized names of tables marked ``isHidden``.
+
+        Hiding a table removes it — columns AND measures — from the report
+        field list, so rules that skip hidden objects treat everything on a
+        hidden table as hidden too.
+        """
+        return {normalize(t.name) for t in self.tables if t.is_hidden}
 
     @property
     def storage_mode(self) -> str:

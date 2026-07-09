@@ -76,6 +76,7 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
                 columns=columns,
                 storage_mode=mode,
                 is_date_table=is_date,
+                is_hidden=bool(table.get("isHidden")),
                 is_calculated=is_calc_table,
                 # a calculated table's DAX lives on its partition source (issue #5)
                 expression=_expression_text(first_source.get("expression")) if is_calc_table else "",

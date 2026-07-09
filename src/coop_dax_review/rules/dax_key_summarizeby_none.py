@@ -4,7 +4,11 @@
 onto a visual and silently summed. We check both endpoints of every
 relationship and flag a numeric key column whose ``summarizeBy`` is not
 ``none`` — including the empty/default case, since a numeric column defaults to
-summing. One finding per offending key column.
+summing. A hidden key column (its own ``isHidden``, or a column of a hidden
+table — hiding a table removes all its fields from the report field list) is
+skipped: it cannot be dragged onto a visual, so the drag-to-sum risk §18 guards
+against doesn't exist; whether the key SHOULD be hidden is §17's call. One
+finding per offending key column.
 """
 
 from __future__ import annotations
@@ -33,6 +37,8 @@ def check(ctx: RuleContext) -> list[Finding]:
             table, column = entry
             if column.data_type.lower() not in NUMERIC_TYPES:
                 continue  # only numeric keys auto-aggregate
+            if column.is_hidden or table.is_hidden:
+                continue  # not in the field list — can't be dragged and summed
             if column.summarize_by.lower() == "none":
                 continue  # already set correctly
             seen.add(key)

@@ -506,7 +506,7 @@ def test_check_wires_the_core_parse_progress_bar(monkeypatch):
     monkeypatch.setattr(Progress, "bar", spy)
     result = CliRunner().invoke(cli, ["check", str(FIXTURES)])
     assert result.exit_code == 0
-    assert seen["bar"] == ("Parsing", 4)  # 3 .tmdl + 1 .bim in the fixtures
+    assert seen["bar"] == ("Parsing", 5)  # 4 .tmdl + 1 .bim in the fixtures
 
 
 # -- inline-suppression-no-e2e-test (coverage) -------------------------------------------

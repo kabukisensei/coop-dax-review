@@ -50,14 +50,21 @@ def test_hidden_fk_silent():
 
 
 def test_summing_numeric_key_fires():
-    # FK on the fact side auto-aggregates (summarizeBy != none).
-    cat = _model([("CustomerKey", "int64", True, "sum")], dim_cols=(("CustomerKey", "int64", True, "none"),))
+    # A VISIBLE FK on the fact side auto-aggregates (summarizeBy != none).
+    cat = _model([("CustomerKey", "int64", False, "sum")], dim_cols=(("CustomerKey", "int64", True, "none"),))
     findings = _run("dax_key_summarizeby_none", cat)
     assert len(findings) == 1 and findings[0].object == "Fact[CustomerKey]"
 
 
 def test_key_with_none_silent():
     cat = _model([("CustomerKey", "int64", True, "none")])
+    assert _run("dax_key_summarizeby_none", cat) == []
+
+
+def test_hidden_summing_key_silent():
+    # A hidden key can't be dragged onto a visual — the §18 drag-to-sum risk
+    # doesn't exist; whether it SHOULD be hidden is §17's call.
+    cat = _model([("CustomerKey", "int64", True, "sum")], dim_cols=(("CustomerKey", "int64", True, "none"),))
     assert _run("dax_key_summarizeby_none", cat) == []
 
 
@@ -117,3 +124,72 @@ def test_hidden_or_none_or_key_silent():
         ]
     )
     assert _run("dax_implicit_measure", cat) == []
+
+
+# -- hidden TABLES hide their columns and measures (§15/§17/§18/§19/§20) ------
+
+
+def _hidden_table_model():
+    """Fact -> Bridge where the whole Bridge (many-side) table is hidden; its
+    visible key column would fire §17/§18 if the table's isHidden didn't count."""
+    bridge = Table(
+        name="Bridge",
+        file="b.tmdl",
+        is_hidden=True,
+        columns=[Column(name="CustomerKey", data_type="int64", summarize_by="sum", line=1)],
+    )
+    dim = Table(
+        name="DimCustomer",
+        file="d.tmdl",
+        columns=[Column(name="CustomerKey", data_type="int64", is_hidden=True, summarize_by="none", line=1)],
+    )
+    return ModelCatalog(
+        name="M",
+        tables=[bridge, dim],
+        relationships=[
+            Relationship(
+                from_table="Bridge",
+                from_column="CustomerKey",
+                to_table="DimCustomer",
+                to_column="CustomerKey",
+            )
+        ],
+    )
+
+
+def test_fk_on_hidden_table_not_flagged_by_hide_fk():
+    # §17: hiding the table hides the FK from the field list — nothing to hide.
+    assert _run("dax_hide_fk_columns", _hidden_table_model()) == []
+
+
+def test_summing_key_on_hidden_table_not_flagged_by_summarizeby():
+    # §18: a hidden table's key can't be dragged and summed.
+    assert _run("dax_key_summarizeby_none", _hidden_table_model()) == []
+
+
+def test_numeric_column_on_hidden_table_emits_no_implicit_measure_review():
+    # §20: an auto-aggregating numeric column on a hidden table is invisible.
+    cat = ModelCatalog(
+        name="M",
+        tables=[
+            Table(
+                name="Staging",
+                file="s.tmdl",
+                is_hidden=True,
+                columns=[Column(name="Amount", data_type="double", summarize_by="sum", line=1)],
+            )
+        ],
+    )
+    assert _run("dax_implicit_measure", cat) == []
+
+
+def test_measures_on_hidden_table_skipped_by_format_string_and_folders():
+    # §15/§19: hiding a table removes its measures from the field list too.
+    measures = [Measure(name=f"H: M{i}", dax="1", table="Staging") for i in range(8)]
+    cat = ModelCatalog(
+        name="M",
+        tables=[Table(name="Staging", file="s.tmdl", is_hidden=True)],
+        measures=measures,
+    )
+    assert _run("dax_format_string", cat) == []
+    assert _run("dax_display_folders", cat) == []

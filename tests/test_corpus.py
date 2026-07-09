@@ -35,20 +35,48 @@ _TABLES = {
         "\t\tdataType: int64\n"
     ),
     "definition/tables/DimCustomer.tmdl": (
+        # Real-export property order: isHidden is the BARE keyword, and
+        # summarizeBy: comes AFTER lineageTag: (both must still bind).
         "table DimCustomer\n"
+        "\tlineageTag: 20000000-0000-0000-0000-000000000001\n"
+        "\n"
         "\tcolumn CustomerKey\n"
         "\t\tdataType: int64\n"
+        "\t\tisHidden\n"
+        "\t\tformatString: 0\n"
+        "\t\tisAvailableInMdx: false\n"
+        "\t\tlineageTag: 20000000-0000-0000-0000-000000000002\n"
         "\t\tsummarizeBy: none\n"
+        "\t\tsourceColumn: CustomerKey\n"
+        "\n"
+        "\t\tchangedProperty = IsHidden\n"
+        "\n"
         "\tcolumn 'Customer Name'\n"
         "\t\tdataType: string\n"
+        "\t\tlineageTag: 20000000-0000-0000-0000-000000000003\n"
+        "\t\tsummarizeBy: none\n"
+        "\t\tsourceColumn: Customer Name\n"
         "\n"
         "\t/// Internal helper, not shown on visuals.\n"
         "\tmeasure 'Cust: _ActiveCount' = COUNTROWS(DimCustomer)\n"
-        "\t\tisHidden: true\n"
+        "\t\tisHidden\n"
+        "\t\tlineageTag: 20000000-0000-0000-0000-000000000004\n"
         "\n"
         "\tmeasure 'Cust: Count' = COUNTROWS(DimCustomer)\n"
         "\t\tdisplayFolder: Counts\n"
         "\t\tformatString: #,0\n"
+    ),
+    "definition/tables/Staging.tmdl": (
+        # A table-level bare isHidden hides the whole table (columns + measures).
+        "table Staging\n"
+        "\tisHidden\n"
+        "\tlineageTag: 50000000-0000-0000-0000-000000000001\n"
+        "\n"
+        "\tcolumn LoadId\n"
+        "\t\tdataType: int64\n"
+        "\t\tlineageTag: 50000000-0000-0000-0000-000000000002\n"
+        "\t\tsummarizeBy: sum\n"
+        "\t\tsourceColumn: LoadId\n"
     ),
     "definition/tables/FactSales.tmdl": (
         "table FactSales\n"
@@ -158,7 +186,7 @@ def _corpus_catalog():
 def test_corpus_parses_to_expected_object_counts():
     cat = _corpus_catalog()
     # A future parser regression that silently drops objects fails here.
-    assert len(cat.tables) == 5
+    assert len(cat.tables) == 6
     assert {m.name for m in cat.measures} == {
         "Cust: _ActiveCount",
         "Cust: Count",
@@ -169,8 +197,17 @@ def test_corpus_parses_to_expected_object_counts():
     assert {c.name for c in cat.calculation_items} == {"Current", "YoY"}
     # feature spot-checks: hidden measure, calc table, calc column all captured.
     assert next(m for m in cat.measures if m.name == "Cust: _ActiveCount").is_hidden
+    assert next(m for m in cat.measures if m.name == "Cust: _ActiveCount").dax == "COUNTROWS(DimCustomer)"
     assert next(t for t in cat.tables if t.name == "Top Customers").expression.startswith("TOPN(")
     assert next(c for t in cat.tables for c in t.columns if c.name == "Margin").is_calculated
+    # the real-export dialect parses: bare isHidden binds, and summarizeBy:
+    # AFTER lineageTag: still reaches the column; table-level isHidden hides.
+    cust_key = next(
+        c for t in cat.tables for c in t.columns if c.name == "CustomerKey" and t.name == "DimCustomer"
+    )
+    assert cust_key.is_hidden and cust_key.summarize_by == "none"
+    assert next(t for t in cat.tables if t.name == "Staging").is_hidden
+    assert cat.hidden_tables == {"staging"}
 
 
 def test_every_rule_survives_the_corpus():

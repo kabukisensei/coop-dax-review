@@ -6,6 +6,33 @@ The JSON output is a machine contract (`schema_version`); breaking changes to it
 field and are called out here.
 
 ## [Unreleased]
+### Fixed
+- **The TMDL parser now reads the dialect real PBIP/Desktop exports actually write.** Two
+  compounding parser gaps made it blind to hidden/summarization metadata in every real export
+  (all fixtures were written in a hand-rolled colon dialect no tool emits):
+  - **Bare boolean properties parse.** Real TMDL serializes a true boolean as the bare keyword —
+    `isHidden` alone on a line; exports never write `isHidden: true`. The bare form is accepted in
+    column, measure, and table scope (the colon form still parses), and a bare `isHidden` after a
+    multi-line measure/calculated-column body now terminates the DAX like any other property line
+    instead of being glued into the expression text.
+  - **Property lines no longer reset the column tracker.** Any unrecognized property
+    (`lineageTag:`, `formatString:`, `isAvailableInMdx:`, `sourceColumn:`, ...) used to clear the
+    current-column binding, and real exports serialize `summarizeBy:` AFTER `lineageTag:` — so
+    `summarize_by` (and any recognized property behind an unrecognized one) never bound. Only a
+    new child object (column/measure/partition/hierarchy/annotation/...) resets the tracker now.
+- **Table-level `isHidden` is captured** (`Table.is_hidden`; TMDL bare + colon forms, and `.bim`),
+  and hiding a table now hides its columns and measures for every rule that skips hidden objects:
+  `DAX-HIDE-FK-COLUMNS` (§17), `DAX-KEY-SUMMARIZEBY-NONE` (§18 — a hidden key column also can't be
+  dragged-and-summed, so hidden keys are now skipped there; whether a key should be hidden stays
+  §17's call), `DAX-IMPLICIT-MEASURE` (§20), `DAX-FORMAT-STRING` (§15), and `DAX-DISPLAY-FOLDERS`
+  (§19).
+- Measured on a real five-model estate, the parser fixes collapse the false-positive walls:
+  `DAX-HIDE-FK-COLUMNS` 166 → 0 findings, `DAX-KEY-SUMMARIZEBY-NONE` 204 → 0, and
+  `DAX-IMPLICIT-MEASURE` 270 → 1 agent items — every removed one was a false positive on a column
+  that IS hidden / DOES set `summarizeBy: none`. All other rules' counts are byte-identical.
+  Fixtures now exercise the real dialect (bare `isHidden`, real export property order, a
+  table-level `isHidden`), with one colon-form `isHidden: true` fixture pinning the hand-written
+  dialect.
 
 ## [0.10.1] — 2026-07-08
 ### Changed

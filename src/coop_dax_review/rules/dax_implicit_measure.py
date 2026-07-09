@@ -26,8 +26,8 @@ def detect(ctx: RuleContext) -> list[AgentReviewItem]:
     items: list[AgentReviewItem] = []
     for table in ctx.catalog.tables:
         for column in table.columns:
-            if column.is_hidden:
-                continue
+            if column.is_hidden or table.is_hidden:
+                continue  # a hidden table hides all its columns from the field list
             if column.data_type.lower() not in NUMERIC_TYPES:
                 continue
             if column.summarize_by.lower() == "none":

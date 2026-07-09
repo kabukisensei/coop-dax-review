@@ -1,5 +1,18 @@
 table DimCustomer
+	lineageTag: 20000000-0000-0000-0000-000000000001
+
 	column CustomerId
 		dataType: int64
+		isHidden: true
+		formatString: 0
+		lineageTag: 20000000-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: CustomerId
+
 	column MarketSegment
 		dataType: string
+		lineageTag: 20000000-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: MarketSegment
+
+		annotation SummarizationSetBy = Automatic

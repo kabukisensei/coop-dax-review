@@ -34,7 +34,10 @@ _CALC_ITEM_RE = re.compile(r"^calculationItem\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\
 _COLUMN_RE = re.compile(r"^column\s+('[^']*'|\"[^\"]*\"|[^=\s]+)\s*(=\s*(.*))?$")
 _DATATYPE_RE = re.compile(r"^dataType\s*:\s*(\S+)")
 _DATACATEGORY_RE = re.compile(r"^dataCategory\s*:\s*(\S+)")
-_ISHIDDEN_RE = re.compile(r"^isHidden\s*:\s*(\S+)", re.IGNORECASE)
+# TMDL serializes a true boolean as the BARE keyword (`isHidden` on its own
+# line — what every real PBIP/Desktop export writes); the colon form
+# (`isHidden: true|false`) appears only in hand-written TMDL. Accept both.
+_ISHIDDEN_RE = re.compile(r"^isHidden(?:\s*:\s*(\S+))?\s*$", re.IGNORECASE)
 _SUMMARIZEBY_RE = re.compile(r"^summarizeBy\s*:\s*(\S+)", re.IGNORECASE)
 _DISPLAYFOLDER_RE = re.compile(r"^displayFolder\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _PARTITION_RE = re.compile(r"^partition\s+(.+?)\s*=\s*(\w+)\s*$")
@@ -45,6 +48,23 @@ _TO_COLUMN_RE = re.compile(r"^toColumn\s*:\s*(.+?)\s*$")
 _CROSSFILTER_RE = re.compile(r"^crossFilteringBehavior\s*:\s*(\S+)")
 _ISACTIVE_RE = re.compile(r"^isActive\s*:\s*(\S+)")
 _PROPERTY_RE = re.compile(r"^[A-Za-z][\w]*\s*:")
+# Column/measure-scope booleans that real exports write bare (see _ISHIDDEN_RE).
+# Like a `name: value` property line, a bare boolean ends a multi-line DAX body.
+_BARE_BOOL_RE = re.compile(
+    r"^(?:isHidden|isKey|isUnique|isNullable|isNameInferred|isDataTypeInferred"
+    r"|isAvailableInMdx|isDefaultLabel|isDefaultImage|isSimpleMeasure)\s*$",
+    re.IGNORECASE,
+)
+# Child objects of a `table` block (TOM Table children). Only one of THESE ends
+# the current column's property run — a property-shaped line the scanner doesn't
+# recognize (`lineageTag:`, `formatString:`, `sourceColumn:`, ...) must not,
+# because real exports serialize recognized properties AFTER unrecognized ones
+# (`summarizeBy:` comes after `lineageTag:`).
+_CHILD_OBJECT_RE = re.compile(
+    r"^(?:column|measure|partition|hierarchy|level|annotation|extendedProperty"
+    r"|calculationGroup|calculationItem|variation|changedProperty|relatedColumnDetails|kpi)\b",
+    re.IGNORECASE,
+)
 _FORMATSTRING_RE = re.compile(r"^formatString\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _FORMATSTRING_DEF_RE = re.compile(r"^formatStringDefinition\b", re.IGNORECASE)
 # The finite set of real TMDL measure properties / child objects (per the TOM
@@ -52,12 +72,15 @@ _FORMATSTRING_DEF_RE = re.compile(r"^formatStringDefinition\b", re.IGNORECASE)
 # treating ANY `Word:` line as a property truncates measure bodies at the
 # standards' own §12 `/* Measure: ... Purpose: ... */` header lines, whose
 # `Purpose:` etc. match the generic property shape but are comment text.
-# Three shapes: `name: value` properties, `name = <expr>` children, and the
-# named/bare child objects (`annotation X = ...`, `kpi`).
+# Four shapes: `name: value` properties, BARE booleans (`isHidden` — the form
+# real exports write; without it a bare isHidden after a measure body would be
+# glued into the measure's DAX), `name = <expr>` children, and the named/bare
+# child objects (`annotation X = ...`, `kpi`).
 _MEASURE_PROP_RE = re.compile(
     r"^(?:"
     r"(?:formatString|displayFolder|lineageTag|sourceLineageTag|description"
     r"|isHidden|isSimpleMeasure|dataCategory|dataType|errorMessage|state)\s*:"
+    r"|(?:isHidden|isSimpleMeasure)\s*$"
     r"|(?:formatStringDefinition|detailRowsDefinition|changedProperty)\s*="
     r"|(?:annotation|extendedProperty)\s+\S"
     r"|kpi\s*$"
@@ -65,6 +88,16 @@ _MEASURE_PROP_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_TABLE_ANNOTATION = "__pbi_templatedatetable"
+
+
+def _hidden_value(match: re.Match) -> bool:
+    """Whether an ``_ISHIDDEN_RE`` match means hidden.
+
+    The bare keyword form (``isHidden`` alone — what real exports write) means
+    true; the colon form is read literally (``isHidden: true`` / ``false``).
+    """
+    value = match.group(1)
+    return True if value is None else value.lower() == "true"
 
 
 def _unquote(name: str) -> str:
@@ -225,6 +258,7 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
                     or _MEASURE_RE.match(inner)
                     or _PARTITION_RE.match(inner)
                     or _PROPERTY_RE.match(inner)
+                    or _BARE_BOOL_RE.match(inner)
                     or inner.lower().startswith(("hierarchy ", "annotation ", "calculationgroup"))
                 ):
                     break
@@ -234,6 +268,7 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
                 i += 1
             table.expression = "\n".join(dax_parts).strip()
     current_column: Column | None = None
+    seen_child = False  # the first child object ends the table-property region
     while i < len(lines):
         raw = lines[i]
         stripped = raw.strip()
@@ -245,6 +280,7 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
 
         col = _COLUMN_RE.match(stripped)
         if col:
+            seen_child = True
             col_indent = _indent(raw)
             current_column = Column(
                 name=_unquote(col.group(1)),
@@ -262,7 +298,9 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
                 while i < len(lines):
                     nxt = lines[i]
                     inner = nxt.strip()
-                    if inner and (_indent(nxt) <= col_indent or _PROPERTY_RE.match(inner)):
+                    if inner and (
+                        _indent(nxt) <= col_indent or _PROPERTY_RE.match(inner) or _BARE_BOOL_RE.match(inner)
+                    ):
                         break
                     if inner:
                         dax_parts.append(inner)
@@ -285,20 +323,29 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
             i += 1
             continue
 
-        if current_column is not None:
-            ih = _ISHIDDEN_RE.match(stripped)
-            if ih:
-                current_column.is_hidden = ih.group(1).lower() == "true"
-                i += 1
-                continue
-            sb = _SUMMARIZEBY_RE.match(stripped)
-            if sb:
-                current_column.summarize_by = sb.group(1)
-                i += 1
-                continue
+        ih = _ISHIDDEN_RE.match(stripped)
+        if ih:
+            # Column scope binds the current column; TABLE scope (the property
+            # region before any child object) hides the whole table. Once a
+            # child has been seen, an unbound isHidden belongs to a measure /
+            # hierarchy / variation and is not the table's (measures re-parse
+            # their own in _parse_measures).
+            if current_column is not None:
+                current_column.is_hidden = _hidden_value(ih)
+            elif not seen_child:
+                table.is_hidden = _hidden_value(ih)
+            i += 1
+            continue
+
+        sb = _SUMMARIZEBY_RE.match(stripped)
+        if sb and current_column is not None:
+            current_column.summarize_by = sb.group(1)
+            i += 1
+            continue
 
         part = _PARTITION_RE.match(stripped)
         if part:
+            seen_child = True
             current_column = None
             mode, i = _consume_partition(lines, i, _indent(raw))
             if mode:
@@ -308,7 +355,15 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
         if stripped.lower().startswith("annotation ") and _DATE_TABLE_ANNOTATION in stripped.lower():
             table.is_date_table = True
 
-        current_column = None
+        # Only a NEW CHILD OBJECT (measure/hierarchy/annotation/...) ends the
+        # current column's property run. An unrecognized property-shaped line
+        # (`lineageTag:`, `formatString:`, `sourceColumn:`, ...) or bare boolean
+        # (`isKey`) must NOT reset the tracker: real exports serialize
+        # `summarizeBy:` AFTER `lineageTag:`, so resetting there would leave
+        # summarize_by (and anything else trailing) forever unbound.
+        if _CHILD_OBJECT_RE.match(stripped):
+            seen_child = True
+            current_column = None
         i += 1
     return table, i
 
@@ -469,7 +524,7 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
                     format_string = "<dynamic>"  # formatStringDefinition: a dynamic format
                 elif not display_folder and (df := _DISPLAYFOLDER_RE.match(inner)):
                     display_folder = _unquote(df.group(1).strip())
-                elif (hm := _ISHIDDEN_RE.match(inner)) and hm.group(1).lower() == "true":
+                elif (hm := _ISHIDDEN_RE.match(inner)) and _hidden_value(hm):
                     is_hidden = True
             i += 1
         out.append(

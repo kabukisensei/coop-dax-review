@@ -8,19 +8,23 @@ per measure, at the measure's declaration line.
 
 A **hidden** measure (``isHidden: true``) is skipped: it is never rendered on a
 visual, so an explicit formatString buys nothing there (issue #7 precision
-refinement — a hidden helper/intermediate measure shouldn't be nagged).
+refinement — a hidden helper/intermediate measure shouldn't be nagged). A
+measure on a **hidden table** is hidden the same way (hiding a table removes
+its measures from the field list too), so it is skipped as well.
 """
 
 from __future__ import annotations
 
 from coop_dax_review.finding import Finding
+from coop_dax_review.model import normalize
 from coop_dax_review.rules.base import Rule, RuleContext
 
 
 def check(ctx: RuleContext) -> list[Finding]:
+    hidden_tables = ctx.catalog.hidden_tables
     findings: list[Finding] = []
     for measure in ctx.catalog.measures:
-        if measure.is_hidden:
+        if measure.is_hidden or normalize(measure.table) in hidden_tables:
             continue  # hidden measures aren't rendered — formatString is moot
         if measure.format_string.strip():
             continue

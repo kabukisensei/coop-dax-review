@@ -90,6 +90,114 @@ def test_measure_is_hidden_and_description_captured_bim():
     assert by["Sales: Revenue"].is_hidden is False
 
 
+def test_column_bare_ishidden_and_real_export_property_order():
+    # Real PBIP exports write the BARE `isHidden` keyword (never `isHidden: true`)
+    # and serialize `summarizeBy:` AFTER unrecognized properties like
+    # `lineageTag:` — neither may unbind the column being scanned.
+    tmdl = (
+        "table Fact\n"
+        "\tcolumn CustomerKey\n"
+        "\t\tdataType: int64\n"
+        "\t\tisHidden\n"
+        "\t\tformatString: 0\n"
+        "\t\tisAvailableInMdx: false\n"
+        "\t\tlineageTag: 10000000-0000-0000-0000-000000000001\n"
+        "\t\tsummarizeBy: none\n"
+        "\t\tsourceColumn: CustomerKey\n"
+        "\n"
+        "\t\tchangedProperty = IsHidden\n"
+        "\n"
+        "\tcolumn Amount\n"
+        "\t\tdataType: double\n"
+        "\t\tlineageTag: 10000000-0000-0000-0000-000000000002\n"
+        "\t\tsummarizeBy: sum\n"
+        "\t\tsourceColumn: Amount\n"
+    )
+    cat = parse_tmdl_model("M", {"f.tmdl": tmdl})
+    cols = {c.name: c for c in cat.tables[0].columns}
+    assert cols["CustomerKey"].is_hidden is True
+    assert cols["CustomerKey"].summarize_by == "none"
+    assert cols["Amount"].is_hidden is False  # changedProperty didn't leak over
+    assert cols["Amount"].summarize_by == "sum"
+
+
+def test_column_colon_ishidden_still_parses():
+    # The hand-written colon dialect must keep working alongside the bare form.
+    tmdl = (
+        "table Fact\n"
+        "\tcolumn A\n"
+        "\t\tdataType: int64\n"
+        "\t\tisHidden: true\n"
+        "\tcolumn B\n"
+        "\t\tdataType: int64\n"
+        "\t\tisHidden: false\n"
+    )
+    cat = parse_tmdl_model("M", {"f.tmdl": tmdl})
+    cols = {c.name: c for c in cat.tables[0].columns}
+    assert cols["A"].is_hidden is True
+    assert cols["B"].is_hidden is False
+
+
+def test_measure_bare_ishidden_not_glued_into_dax():
+    # A bare `isHidden` after a multi-line measure body is a property, not DAX.
+    tmdl = (
+        "table T\n"
+        "\tmeasure 'Sales: _Helper' =\n"
+        "\t\tSUM(T[Amount])\n"
+        "\t\tisHidden\n"
+        "\t\tlineageTag: 10000000-0000-0000-0000-000000000003\n"
+        "\n"
+        "\tmeasure 'Sales: Revenue' = SUM(T[Amount])\n"
+    )
+    cat = parse_tmdl_model("M", {"t.tmdl": tmdl})
+    by = {m.name: m for m in cat.measures}
+    assert by["Sales: _Helper"].is_hidden is True
+    assert by["Sales: _Helper"].dax == "SUM(T[Amount])"  # no glued property text
+    assert by["Sales: Revenue"].is_hidden is False
+
+
+def test_table_level_ishidden_bare_and_colon():
+    tmdl_bare = (
+        "table Staging\n"
+        "\tisHidden\n"
+        "\tlineageTag: 10000000-0000-0000-0000-000000000004\n"
+        "\n"
+        "\tcolumn A\n"
+        "\t\tdataType: int64\n"
+    )
+    tmdl_colon = "table Staging\n\tisHidden: true\n\tcolumn A\n\t\tdataType: int64\n"
+    for text in (tmdl_bare, tmdl_colon):
+        cat = parse_tmdl_model("M", {"s.tmdl": text})
+        assert cat.tables[0].is_hidden is True
+        assert cat.hidden_tables == {"staging"}
+
+
+def test_measure_ishidden_does_not_leak_to_table():
+    # An isHidden inside a measure's property block (current column unbound,
+    # children already seen) is the MEASURE's — never the table's.
+    tmdl = "table T\n\tmeasure 'Sales: _Helper' = 1\n\t\tisHidden\n\tcolumn A\n\t\tdataType: int64\n"
+    cat = parse_tmdl_model("M", {"t.tmdl": tmdl})
+    assert cat.tables[0].is_hidden is False
+    assert {c.name: c.is_hidden for c in cat.tables[0].columns} == {"A": False}
+    assert cat.measures[0].is_hidden is True
+
+
+def test_table_level_ishidden_bim():
+    model = {
+        "name": "M",
+        "model": {
+            "tables": [
+                {"name": "Staging", "isHidden": True, "columns": [{"name": "A", "dataType": "int64"}]},
+                {"name": "Fact", "columns": [{"name": "B", "dataType": "int64"}]},
+            ]
+        },
+    }
+    cat = parse_bim_model("m.bim", json.dumps(model))
+    hidden = {t.name: t.is_hidden for t in cat.tables}
+    assert hidden == {"Staging": True, "Fact": False}
+    assert cat.hidden_tables == {"staging"}
+
+
 def test_calculated_table_expression_inline_tmdl():
     # issue #5: an inline `table X = <DAX>` retains its expression for linting.
     cat = parse_tmdl_model(

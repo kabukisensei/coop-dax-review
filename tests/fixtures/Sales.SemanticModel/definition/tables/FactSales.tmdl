@@ -1,12 +1,31 @@
 table FactSales
+	lineageTag: 10000000-0000-0000-0000-000000000001
+
 	column Revenue
 		dataType: double
+		formatString: #,0.00
+		lineageTag: 10000000-0000-0000-0000-000000000002
+		summarizeBy: sum
+		sourceColumn: Revenue
+
+		annotation SummarizationSetBy = Automatic
+
 	column ProductId
 		dataType: int64
+		isHidden
+		formatString: 0
+		isAvailableInMdx: false
+		lineageTag: 10000000-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: ProductId
+
+		changedProperty = IsHidden
 
 	measure 'Sales: Total Revenue' = SUM(FactSales[Revenue])
+		lineageTag: 10000000-0000-0000-0000-000000000004
 
 	measure BadName = SUM(FactSales[Revenue])
+		lineageTag: 10000000-0000-0000-0000-000000000005
 
 	measure 'Sales: Revenue YTD' =
 		CALCULATE(
@@ -16,12 +35,19 @@ table FactSales
 			),
 			SAMEPERIODLASTYEAR(DimDate[Date])
 		)
+		lineageTag: 10000000-0000-0000-0000-000000000006
 
 	measure 'Sales: Enterprise' =
 		CALCULATE(
 			FactSales[Sales: Total Revenue],
 			[MarketSegment] = "Enterprise"
 		)
+		lineageTag: 10000000-0000-0000-0000-000000000007
+
+	measure 'Sales: _Internal Helper' =
+		SUM(FactSales[Revenue])
+		isHidden
+		lineageTag: 10000000-0000-0000-0000-000000000008
 
 	partition FactSales = m
 		mode: import
