@@ -286,6 +286,10 @@ field and are called out here.
 - Initial release: 24 DAX/model-standard rules over TMDL/`.bim` Power BI semantic models, a human
   report, and the machine JSON contract for the company analytics agent. Offline, advisory, never blocks.
 
+[0.10.1]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.10.1
+[0.10.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.10.0
+[0.9.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.9.0
+[0.8.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.8.0
 [0.7.1]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.7.1
 [0.7.0]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.7.0
 [0.6.4]: https://github.com/kabukisensei/coop-dax-review/releases/tag/v0.6.4
