@@ -31,6 +31,9 @@ def check(ctx: RuleContext) -> list[Finding]:
                 f"{len(hits)} auto date/time table(s) present ({shown}{extra}) — disable Power BI's "
                 "auto date/time option and use a single marked Date table for time intelligence (§21)."
             ),
+            # The artifact count / example names churn as date columns come and go; the
+            # identity is "artifacts are present" (issue #14 — volatile-message rule).
+            fingerprint_key="auto date/time artifacts present",
         )
     ]
 

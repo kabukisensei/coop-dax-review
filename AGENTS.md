@@ -265,14 +265,23 @@ coop-dax-review --version
   baseline, `rules.yml` ignore list) filter findings **and `agent_review` items** before the
   `--min-severity` floor (`--write-baseline` records agent fingerprints too; an entry matching only
   an agent item is never stale) — same contract as coop-sql-review. Findings carry a stable, line-
-  and path-independent `Finding.fingerprint()` (`rule_id, model, object, message/note` — no file, no
-  line — **still schema_version 2**: the family-wide identity-scheme bump is tracked separately as
-  issue #14, so baselines/ignores survive a cwd or machine change); the JSON adds
-  `schema_version`, a `verdict`, `models_checked`, and a `fingerprint` per finding/agent-review item.
-  The same fingerprints travel in the SARIF output as `partialFingerprints` under the family's
-  frozen key `coopFingerprint/v2` (core `SARIF_FINGERPRINT_KEY` — GitHub code scanning matches
-  alerts across runs by that key/value pair; no alerts have shipped from this tool yet, so the
-  default key is the right one).
+  and path-independent `Finding.fingerprint()` following the **family identity rule** — IDENTICAL
+  in coop-sql-review (which has no `model` component) since schema_version 3 here / 4 there:
+  `(rule_id, model, object-or-file-basename, fingerprint_key-or-message/note, occurrence ordinal)`.
+  An empty `object` falls back to the file **basename**; a rule whose message embeds volatile
+  detail (counts, name lists) sets a stable `fingerprint_key` via `ctx.finding(fingerprint_key=...)`
+  — the three volatile-message rules do (issue #14: `DAX-DISPLAY-FOLDERS`,
+  `DAX-MARKED-DATE-TABLE`, `DAX-AUTO-DATETIME`), so unrelated model growth no longer churns their
+  identities; and the **occurrence ordinal** (0-based, stamped by the engine in the deterministic
+  sort order on the full pre-suppression result) discriminates N same-identity occurrences, so a
+  baseline written before a NEW occurrence never silently suppresses it (the coop-sql-review#16
+  ratchet hole). Deliberate trade-off: adding/removing an occurrence above a same-identity sibling
+  shifts the sibling's ordinal — it resurfaces and its old baseline entry goes stale **loudly**.
+  The JSON adds `schema_version`, a `verdict`, `models_checked`, and a `fingerprint` per
+  finding/agent-review item. The same fingerprints travel in the SARIF output as
+  `partialFingerprints` under the family's frozen key `coopFingerprint/v2` (core
+  `SARIF_FINGERPRINT_KEY` — GitHub code scanning matches alerts across runs by that key/value
+  pair; the VALUES changed at schema 3, the key label deliberately did not).
 - **`rules.yml` ignore list** (core `RuleConfig.ignored_fingerprints` + `add_ignores`): an optional
   top-level `ignore:` list in `rules.yml` — human-readable, fingerprint-matched suppressions living
   in the one writable config file. Filtered before the `--min-severity` floor (like the baseline). A
@@ -366,5 +375,6 @@ This repo's work queue is its GitHub issues labeled **`agent:ready`**:
   rules above).
 - An open issue WITHOUT the `agent:ready` label is waiting on a human decision —
   leave it alone.
-- **#14 (stable fingerprints) must be implemented together with
-  coop-sql-review#16** — one coordinated family identity bump, or not at all.
+- Fingerprint-identity changes are a FAMILY affair: coop-dax-review and
+  coop-sql-review share one identity construction (see "Suppressions" above)
+  and must bump together (as #14 + sql#16 did), never fork.

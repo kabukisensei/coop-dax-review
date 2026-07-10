@@ -50,6 +50,37 @@ field and are called out here.
   The earlier `--save-ignores` write-back-shadowing part of this issue was already fixed in
   0.12.0 (core `config_write_path`).
 ### Changed
+- **BREAKING (one-time): the family fingerprint identity rule — JSON `schema_version` → 3**
+  (issue #14; landed together with coop-sql-review#16, whose `schema_version` goes 3 → 4 with the
+  **identical** construction — the family's identity rules are in lockstep again). A fingerprint
+  is now `(rule_id, model, object-or-file-basename, fingerprint_key-or-message, occurrence
+  ordinal)`:
+  - **`Finding.fingerprint_key`** (optional; empty = the message is the identity, the default):
+    the three rules whose display messages embed volatile counts/name-lists now set a stable
+    identity core — `DAX-DISPLAY-FOLDERS` ("table has {N} measures..." → `no display folders`),
+    `DAX-MARKED-DATE-TABLE` (the time-intel user list → `no marked date table`), and
+    `DAX-AUTO-DATETIME` (artifact count + examples → `auto date/time artifacts present`). Adding
+    an unrelated measure (or date column) no longer churns these fingerprints, so their baselines
+    and `rules.yml` `ignore:` entries survive incidental model growth instead of flooding back
+    with an `ignore_stale` ghost. The rendered human message is unchanged.
+  - **Occurrence ordinal** (the ratchet fix, from the sql twin): N same-identity occurrences are
+    numbered 0, 1, 2, ... in the deterministic sort order (stamped on the full pre-suppression
+    result; the first occurrence keeps ordinal 0), so a baseline written before a NEW occurrence
+    never silently suppresses it. Deliberate trade-off: adding/removing an occurrence *above* a
+    same-identity sibling shifts the sibling's ordinal — it resurfaces (and its old baseline entry
+    is reported stale, loudly).
+  - An **empty `object`** now falls back to the file **basename** (the sql twin's schema-3 fix),
+    so object-less findings in different files can never collapse to one fingerprint.
+  - The SARIF `partialFingerprints` KEY stays frozen at the family's `coopFingerprint/v2` (core
+    `SARIF_FINGERPRINT_KEY`) — only the values change; the label deliberately survives so GitHub
+    code-scanning alert continuity remains an explicit choice.
+
+  **Migration (one-time):** every pre-3 fingerprint stops matching — regenerate baselines and
+  saved ignores once: re-run `coop-dax-review check <models> --write-baseline baseline.json`, and
+  rebuild the `rules.yml` `ignore:` list with `coop-dax-review check <models> --save-ignores` (or
+  delete the stale entries by hand). Until then the old entries surface **loudly** as `baseline` /
+  `ignore_stale` warning diagnostics on every run — never a silent mismatch. Same playbook as the
+  v0.9.0 schema-2 bump.
 - **`DAX-VALIDATION` collapses to ONE model-level agent-review item** (issue #16). The per-measure
   form repeated an identical, un-actionable "confirm §11 validation was performed" note for every
   non-trivial measure (163 of 216 agent items on a real five-model estate), burying the genuinely

@@ -235,7 +235,7 @@ def test_agent_item_fingerprint_is_display_path_independent():
 
 
 def test_schema_version_bumped_for_fingerprint_change():
-    assert SCHEMA_VERSION == 2  # fingerprints changed: regenerate baselines/ignores once
+    assert SCHEMA_VERSION == 3  # fingerprints changed: regenerate baselines/ignores once
 
 
 _MODEL_TMDL = "table T\n\tcolumn A\n\t\tdataType: double\n\n\tmeasure 'M: Ratio' = T[A] / 2\n"

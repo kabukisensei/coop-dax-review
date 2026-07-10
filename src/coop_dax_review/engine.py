@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from coop_dax_review.diagnostics import RULE_ERROR, Diagnostic
-from coop_dax_review.finding import AgentReviewItem, Finding, severity_rank
+from coop_dax_review.finding import AgentReviewItem, Finding, assign_occurrences, severity_rank
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.rules.base import Rule, RuleContext
 
@@ -84,4 +84,9 @@ def run_rules(catalogs: list[ModelCatalog], rules: list[Rule]) -> Result:
     result.findings.sort(key=lambda f: f.sort_key())
     result.agent_review.sort(key=lambda a: a.sort_key())
     result.diagnostics.sort(key=lambda d: d.sort_key())
+    # Occurrence ordinals are stamped on the FULL sorted result — before any
+    # suppression filter runs — so suppressing one occurrence never renumbers
+    # (and thereby resurfaces) its siblings. See finding.assign_occurrences.
+    result.findings = assign_occurrences(result.findings)
+    result.agent_review = assign_occurrences(result.agent_review)
     return result

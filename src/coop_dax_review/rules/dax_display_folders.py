@@ -50,6 +50,9 @@ def check(ctx: RuleContext) -> list[Finding]:
                     f"table has {len(measures)} measures and no display folders — group them into "
                     "display folders so the model is navigable (§19)."
                 ),
+                # The measure COUNT churns on any measure add/remove; the identity is
+                # "this table has no display folders" (issue #14 — volatile-message rule).
+                fingerprint_key="no display folders",
             )
         )
     return findings

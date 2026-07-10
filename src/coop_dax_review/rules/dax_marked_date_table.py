@@ -46,6 +46,9 @@ def check(ctx: RuleContext) -> list[Finding]:
                 f"time-intelligence functions are used ({shown}{extra}) but no table is marked as a "
                 "Date table — mark a contiguous Date table for time intelligence (§8)."
             ),
+            # The example list / (+N more) count churns as time-intel users come and
+            # go; the identity is "no marked Date table" (issue #14 — volatile-message rule).
+            fingerprint_key="no marked date table",
         )
     ]
 

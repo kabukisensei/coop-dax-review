@@ -62,7 +62,18 @@ def _rule_counts(findings) -> list[tuple[str, str, int]]:
 # 2: fingerprints dropped the cwd-relative display path from their identity
 #    (now rule_id+model+object+message) — baselines and rules.yml ignore lists
 #    written under schema 1 must be regenerated once.
-SCHEMA_VERSION = 2
+# 3: the FAMILY identity rule (issue #14; coop-sql-review#16 is its schema-4 twin —
+#    the two tools' fingerprint construction is identical again): identity is
+#    (rule_id, model, object-or-file-basename, fingerprint_key-or-message,
+#    occurrence ordinal). The optional fingerprint_key gives the volatile-message
+#    rules (DAX-DISPLAY-FOLDERS, DAX-MARKED-DATE-TABLE, DAX-AUTO-DATETIME) a stable
+#    identity core so unrelated model edits no longer churn their fingerprints; the
+#    ordinal (0-based, deterministic sort order) discriminates N occurrences of one
+#    logical issue (the baseline ratchet hole); an empty object now falls back to
+#    the file basename. ALL fingerprints change: regenerate baselines and rules.yml
+#    ignore lists once. The SARIF partialFingerprints KEY stays frozen at
+#    "coopFingerprint/v2" (core's default — only the values change).
+SCHEMA_VERSION = 3
 
 
 def _finding_json(f) -> dict:

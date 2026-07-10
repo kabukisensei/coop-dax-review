@@ -50,7 +50,7 @@ def _result() -> Result:
 def test_json_contract_keys():
     payload = to_json(_result(), version="0.1.0", standards=STANDARDS)
     assert payload["tool"] == "coop-dax-review"
-    assert payload["schema_version"] == 2  # 2: path-independent fingerprints
+    assert payload["schema_version"] == 3  # 3: the family identity rule (issue #14)
     assert payload["summary"] == {"error": 0, "warning": 1, "info": 1}
     assert set(payload["verdict"]) == {"clean", "highest_severity"}
     first = payload["findings"][0]

@@ -233,15 +233,19 @@ so a triaged item stays silenced everywhere:
   any finding (you fixed it) is reported as a diagnostic so the file self-cleans
   (`--write-baseline` to prune).
 
-  > **One-time migration (schema_version 2):** fingerprints used to include the cwd-relative file
-  > path and changed in this release. Delete and regenerate any baseline files and `rules.yml`
-  > `ignore:` lists written by earlier versions (re-run `--write-baseline` / `--save-ignores`).
+  > **One-time migration (schema_version 3):** the fingerprint identity changed in this release
+  > (a stable core for the volatile-message rules + an occurrence ordinal — coordinated with
+  > coop-sql-review's schema 4, one family rule). Delete and regenerate any baseline files and
+  > `rules.yml` `ignore:` lists written by earlier versions once:
+  > `coop-dax-review check <models> --write-baseline baseline.json` and re-run
+  > `coop-dax-review check <models> --save-ignores`. Until then, old entries are reported loudly
+  > as stale diagnostics on every run — nothing goes silently missing.
 
 ## Agent JSON contract
 
 ```json
 {
-  "tool": "coop-dax-review", "schema_version": 2, "version": "x.y.z",
+  "tool": "coop-dax-review", "schema_version": 3, "version": "x.y.z",
   "standards": {"path": "...", "sha256": "..."},
   "models_checked": 2,
   "verdict": {"clean": false, "highest_severity": "warning"},
