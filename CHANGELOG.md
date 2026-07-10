@@ -7,6 +7,24 @@ field and are called out here.
 
 ## [Unreleased]
 ### Added
+- **Four new rules** (issue #19), each canon-gated behind a new authored section in
+  `docs/standards.md` (§22–§25, bundled copy kept byte-identical; the rule registry now
+  advertises 29 rules):
+  - **`DAX-EARLIER-TO-VAR`** (§22, warning): `EARLIER`/`EARLIEST` — the legacy pre-VAR
+    outer-row-context idiom — in any measure, calculated column, calculated table, or calculation
+    item; capture the outer row's value in a `VAR` instead. Masked-text scan; an identifier named
+    `[Earlier]` or a comment never fires.
+  - **`DAX-DEAD-INACTIVE-RELATIONSHIP`** (§23, warning): an `isActive: false` relationship whose
+    endpoint pair is never named by a `USERELATIONSHIP(...)` call anywhere in the model's DAX —
+    dead modeling weight or a missed active path. Endpoints match as normalized `Table[Column]`
+    pairs in either argument order; a call inside a comment/string doesn't keep one alive.
+  - **`DAX-IFERROR-WRAPPING`** (§24, warning): `IFERROR` whose first argument contains arithmetic
+    (`+ - * /`) — it hides real errors and is slower than `DIVIDE()` (§14, the paired rule). An
+    IFERROR guarding a non-arithmetic error source (e.g. `VALUE(...)`) is left alone.
+  - **`DAX-MEASURE-DESCRIPTION`** (§25, info): a **visible** measure with no description (TMDL
+    `///` doc-comment / `.bim` `description`) — descriptions are what report authors and
+    Copilot/Q&A read. Hidden measures and measures on hidden tables are exempt (same visibility
+    rule as `DAX-FORMAT-STRING`).
 - **HTML report filter toggles** (issue #17): a row of severity chips (error/warning/info, each
   showing its count) and a rule `<select>` hide/show finding rows client-side; a model card whose
   rows are all filtered out hides too. Implemented as a small inline vanilla-JS `<script>` + CSS —

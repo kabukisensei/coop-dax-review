@@ -28,6 +28,10 @@ storage mode); `agent` = judgment → emitted in `agent_review`. **Tier 1** = bu
 | `DAX-KEY-SUMMARIZEBY-NONE` | 18 | numeric key column that auto-aggregates (`summarizeBy` ≠ none) | info | model | 2 |
 | `DAX-DISPLAY-FOLDERS` | 19 | measure-heavy table with no display folders | info | model | 2 |
 | `DAX-AUTO-DATETIME` | 21 | auto date/time artifacts (`LocalDateTable_*` / `DateTableTemplate_*` tables) | warning | model | 2 |
+| `DAX-EARLIER-TO-VAR` | 22 | `EARLIER`/`EARLIEST` — the legacy pre-VAR outer-row-context idiom; capture the value in a `VAR` | warning | text | 2 |
+| `DAX-DEAD-INACTIVE-RELATIONSHIP` | 23 | inactive relationship never activated by `USERELATIONSHIP()` in any measure / calc column / calc item | warning | model+text | 2 |
+| `DAX-IFERROR-WRAPPING` | 24 | `IFERROR(<arithmetic>, ...)` — hides real errors and is slower than `DIVIDE()` | warning | text | 2 |
+| `DAX-MEASURE-DESCRIPTION` | 25 | visible measure with no description (TMDL `///` doc-comment / `.bim` `description`) | info | catalog | 3 |
 
 ## Agent-judgment rules — emit in `agent_review`
 

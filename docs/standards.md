@@ -338,7 +338,89 @@ a reliable, deterministic signal that auto date/time was left on. Turn the optio
 Options → Data Load → Time intelligence), remove the auto-tables, and reference a single marked Date
 table (§8) for all time-intelligence calculations.
 
-## 22. References
+## 22. Replace EARLIER with VAR
+
+Never use `EARLIER`/`EARLIEST` in new DAX. They are the legacy pre-VAR way to reach an outer row
+context: they read as a puzzle, and they break silently when the surrounding code adds another row
+context level. Capture the outer row's value in a `VAR` before entering the inner row context —
+§2 already mandates VAR/RETURN structure, and a variable makes the intent explicit.
+
+```dax
+-- Good: capture the outer row's value in a VAR
+RunningTotal =
+VAR CurrentDate = FactSales[OrderDate]
+RETURN
+    CALCULATE(
+        SUM(FactSales[Revenue]),
+        FILTER(
+            ALL(FactSales),
+            FactSales[OrderDate] <= CurrentDate
+        )
+    )
+
+-- Bad: EARLIER reaches back one row context implicitly
+RunningTotal =
+CALCULATE(
+    SUM(FactSales[Revenue]),
+    FILTER(
+        ALL(FactSales),
+        FactSales[OrderDate] <= EARLIER(FactSales[OrderDate])
+    )
+)
+```
+
+## 23. No Dead Inactive Relationships
+
+An inactive relationship (`isActive: false`) exists to be activated on demand with
+`USERELATIONSHIP()`. One that no measure, calculated column, or calculation item ever activates is
+dead modeling weight: it confuses maintainers, slows model comprehension, and often marks a missed
+active path. Either use it where the alternate path is needed, or remove it.
+
+```dax
+-- Good: the inactive DimDate[Date] -> FactSales[ShipDate] relationship is used on demand
+Sales: Revenue by Ship Date =
+CALCULATE(
+    [Sales: Total Revenue],
+    USERELATIONSHIP(FactSales[ShipDate], DimDate[Date])
+)
+```
+
+## 24. Don't Wrap Arithmetic in IFERROR
+
+Don't wrap division or other arithmetic in `IFERROR`. It hides **every** error — including the
+real data and logic bugs you want surfaced — and forces the engine into slower row-by-row error
+handling. For divide-by-zero, use `DIVIDE()` (§14); for expected blanks, test the inputs instead
+of swallowing the failure.
+
+```dax
+-- Good: DIVIDE handles the only expected failure (a zero/blank denominator)
+Sales: Margin % =
+DIVIDE(
+    [Sales: Profit],
+    [Sales: Total Revenue]
+)
+
+-- Bad: IFERROR hides real errors and is slower
+Sales: Margin % =
+IFERROR(
+    [Sales: Profit] / [Sales: Total Revenue],
+    BLANK()
+)
+```
+
+## 25. Measure Descriptions
+
+Every **visible** measure should carry a description: it is the documentation report authors see
+on hover in the field list, and it is what Copilot/Q&A read to choose and explain measures. In
+TMDL a description is a `///` doc-comment directly above the declaration; in a `.bim` it is the
+`description` property. Hidden measures (internal helpers) are exempt.
+
+```tmdl
+/// Total revenue across all sales transactions, before returns.
+measure 'Sales: Total Revenue' = SUM(FactSales[Revenue])
+```
+
+## 26. References
 
 - [Microsoft Fabric Skills for GitHub Copilot](https://github.com/microsoft/skills-for-fabric) — Official Microsoft-authored Fabric skills (MIT license)
 - [Microsoft Fabric Semantic Model Authoring](https://github.com/microsoft/skills-for-fabric/tree/main/skills/semantic-model-authoring) — TMDL, DAX, deployment patterns

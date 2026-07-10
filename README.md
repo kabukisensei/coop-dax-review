@@ -141,6 +141,11 @@ Run `coop-dax-review rules` for the live list. Deterministic rules (reported as 
 | `DAX-HIDE-FK-COLUMNS` | 17 | info | a visible foreign-key (relationship) column |
 | `DAX-KEY-SUMMARIZEBY-NONE` | 18 | info | a numeric key column that auto-aggregates (`summarizeBy` ≠ none) |
 | `DAX-DISPLAY-FOLDERS` | 19 | info | a measure-heavy table with no display folders |
+| `DAX-AUTO-DATETIME` | 21 | warning | auto date/time artifacts (`LocalDateTable_*` / `DateTableTemplate_*` tables) |
+| `DAX-EARLIER-TO-VAR` | 22 | warning | `EARLIER`/`EARLIEST` — the legacy pre-VAR idiom; capture the outer row value in a `VAR` |
+| `DAX-DEAD-INACTIVE-RELATIONSHIP` | 23 | warning | an inactive relationship never activated by `USERELATIONSHIP()` |
+| `DAX-IFERROR-WRAPPING` | 24 | warning | `IFERROR` wrapped around arithmetic (hides real errors; slower than `DIVIDE()`) |
+| `DAX-MEASURE-DESCRIPTION` | 25 | info | a visible measure with no description |
 
 Agent-judgment rules — the tool detects the construct but emits to the JSON `agent_review` list
 (never an auto-finding), because the call needs intent the linter can't infer:
@@ -156,7 +161,9 @@ Agent-judgment rules — the tool detects the construct but emits to the JSON `a
 
 See `RULES.md` for the full taxonomy. `docs/standards.md` §14–§20 are adopted Microsoft/Tabular
 best practices (DIVIDE, format strings, key column types, hidden FKs, key summarizeBy, display
-folders, explicit measures); `docs/standards-proposed-additions.md` is the original candidate list.
+folders, explicit measures), and §22–§25 add EARLIER→VAR, dead inactive relationships,
+IFERROR-wrapping, and measure descriptions; `docs/standards-proposed-additions.md` is the original
+candidate list.
 
 ## DAX syntax errors
 

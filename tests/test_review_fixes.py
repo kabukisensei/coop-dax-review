@@ -427,12 +427,13 @@ def test_var_keyword_inside_quoted_table_name_is_not_var_return(make_catalog):
 # -- registry-silently-drops-rules-and-count-unpinned --------------------------------
 
 
-def test_registry_advertises_exactly_25_rules():
-    # Bump this pin in the same commit that adds/removes a rule. 25 as of issue #10
-    # (added DAX-AUTO-DATETIME §21).
+def test_registry_advertises_exactly_29_rules():
+    # Bump this pin in the same commit that adds/removes a rule. 29 as of issue #19
+    # (added DAX-EARLIER-TO-VAR §22, DAX-DEAD-INACTIVE-RELATIONSHIP §23,
+    # DAX-IFERROR-WRAPPING §24, DAX-MEASURE-DESCRIPTION §25).
     rules = all_rules()
-    assert len(rules) == 25
-    assert len({r.id for r in rules}) == 25  # ids unique
+    assert len(rules) == 29
+    assert len({r.id for r in rules}) == 29  # ids unique
 
 
 def test_every_dax_module_contributes_exactly_one_rule():

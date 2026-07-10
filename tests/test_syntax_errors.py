@@ -282,6 +282,7 @@ def test_strict_exits_two_on_a_syntax_error(tmp_path):
 ONE_BROKEN = "\tmeasure 'A Bad' = SUM(FactSales[Revenue]\n"
 _QUIET_RULES = (
     "rules:\n  DAX-FORMAT-STRING:\n    enabled: false\n  DAX-MEASURE-CATEGORY:\n    enabled: false\n"
+    "  DAX-MEASURE-DESCRIPTION:\n    enabled: false\n"
 )
 
 
