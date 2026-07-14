@@ -31,11 +31,12 @@ redirected / `--no-color` / `NO_COLOR` (`report.console_lines(..., color=)`, cli
 expanded `tests/test_cli.py`; upgrade-command coverage lives there and in
 `tests/test_core_wiring.py` / `tests/test_review_fixes.py`.
 Remaining: **M6** — wire into the company analytics agent. (Publishing is done: coop-dax-review
-is live on PyPI via the `v*`-tag trusted-publishing workflow.) Any further
-`standards-proposed-additions.md` items need the user to merge the section into `docs/standards.md`
-(the authored canon) first; keep the bundled copy `src/coop_dax_review/data/standards.md`
-byte-identical (see "Standards-file invariant" below). Background reading: `SPEC.md`, `RULES.md`,
-`docs/standards.md`.
+is live on PyPI via the `v*`-tag trusted-publishing workflow.) Every item in
+`standards-proposed-additions.md` has already been adopted into `docs/standards.md` (that file is
+now a historical record); any *further* proposed rule still needs the user to merge it into
+`docs/standards.md` (the authored canon) first; keep the bundled copy
+`src/coop_dax_review/data/standards.md` byte-identical (see "Standards-file invariant" below).
+Background reading: `SPEC.md`, `RULES.md`, `docs/standards.md`.
 
 ## Environment
 
