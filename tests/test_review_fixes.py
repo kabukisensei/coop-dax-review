@@ -299,6 +299,71 @@ def test_strict_stays_zero_on_a_clean_model(tmp_path):
     assert json.loads(ok.stdout)["verdict"]["clean"] is True
 
 
+# -- bim-undecodable-masked-by-errors-replace -------------------------------------
+#
+# issue #23: the .bim path read with errors="replace", so an undecodable .bim
+# degraded to a warning PARSE_FAILED and passed --strict as clean — while the
+# identical TMDL case is an error-severity file_unreadable. The .bim path now
+# uses the same BOM-aware decode + NUL guard as TMDL.
+
+_BIM_DIVIDE = json.dumps(
+    {
+        "name": "M",
+        "model": {
+            "tables": [
+                {
+                    "name": "T",
+                    "columns": [{"name": "A", "dataType": "double"}],
+                    "measures": [{"name": "R", "expression": "T[A] / T[A]"}],
+                }
+            ]
+        },
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        _BIM_DIVIDE.encode("utf-16"),  # LE with BOM
+        codecs.BOM_UTF16_BE + _BIM_DIVIDE.encode("utf-16-be"),
+    ],
+    ids=["utf-16-le-bom", "utf-16-be-bom"],
+)
+def test_utf16_bom_bim_parses_and_lints(tmp_path, data):
+    (tmp_path / "model.bim").write_bytes(data)
+    payload = _check_json(str(tmp_path / "model.bim"))
+    # the sibling TMDL decoder deliberately supports UTF-16-with-BOM; the .bim
+    # path now does too, so DAX-USE-DIVIDE fires on the parsed measure.
+    assert any(f["rule_id"] == "DAX-USE-DIVIDE" for f in payload["findings"])
+
+
+def test_undecodable_bim_is_error_severity_file_unreadable(tmp_path):
+    bim = tmp_path / "model.bim"
+    bim.write_bytes(b'{"name":\x00\x93\xff garbage')  # not UTF-8, no UTF-16 BOM
+    payload = _check_json(str(bim))  # non-strict -> still exit 0 (happy path unchanged)
+    diags = [d for d in payload["diagnostics"] if d["category"] == "file_unreadable"]
+    assert diags and any("model.bim" in d["file"] for d in diags)
+    assert all(d["severity"] == "error" for d in diags)
+    # a genuine decode failure is NOT a warning parse_failed and NOT clean
+    assert not any(d["category"] == "parse_failed" for d in payload["diagnostics"])
+    assert payload["verdict"]["clean"] is False
+    assert payload["verdict"]["highest_severity"] == "error"
+    # ...and --strict fails on it, exactly like the TMDL case
+    strict = CliRunner().invoke(cli, ["check", str(bim), "--strict", "--format", "json"])
+    assert strict.exit_code == 2
+
+
+def test_bim_json_syntax_error_stays_warning_parse_failed(tmp_path):
+    # a decodable-but-invalid-JSON .bim is still a warning parse_failed (matching
+    # the TMDL parse-failure policy) — only DECODE failures are promoted to error.
+    bim = tmp_path / "model.bim"
+    bim.write_text('{"name": "M", oops not json', encoding="utf-8")
+    payload = _check_json(str(bim))
+    assert any(d["category"] == "parse_failed" for d in payload["diagnostics"])
+    assert not any(d["category"] == "file_unreadable" for d in payload["diagnostics"])
+
+
 # -- dax-bim-double-count-overlapping-roots ---------------------------------------
 
 

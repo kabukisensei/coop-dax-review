@@ -47,7 +47,7 @@ from coop_dax_review.finding import SEVERITIES
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
-from coop_dax_review.parsers.tmdl import group_tmdl_files, parse_tmdl_model
+from coop_dax_review.parsers.tmdl import decode_tmdl, group_tmdl_files, parse_tmdl_model
 from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown, to_sarif
 from coop_dax_review.rules import all_rules
@@ -194,9 +194,35 @@ def build_catalogs(
     for path in bim_files:
         disp = display.get(path) or display_path(path)
         try:
-            text = path.read_text(encoding="utf-8-sig", errors="replace")
+            # BOM-aware decode with the same NUL guard as the TMDL path: reading
+            # with errors="replace" would mask an undecodable .bim (e.g. UTF-16
+            # without a BOM) as mojibake that then fails json.loads and degrades
+            # to a warning PARSE_FAILED — so a model whose only file is an
+            # unreadable .bim would report verdict clean and pass --strict, while
+            # the identical TMDL case fails strict (issue #23). A decode failure
+            # is coverage lost, exactly like an unreadable file -> error-severity
+            # file_unreadable (issue #1). Genuine JSON syntax errors stay a
+            # warning PARSE_FAILED below, matching the TMDL parse-failure policy.
+            text = decode_tmdl(path.read_bytes())
         except OSError as exc:
             catalogs.append(_unreadable_model(disp, exc))
+            if on_file is not None:
+                on_file(disp)
+            continue
+        except UnicodeDecodeError as exc:
+            cat = ModelCatalog(name=Path(disp).stem or disp, file=disp)
+            cat.diagnostics.append(
+                Diagnostic(
+                    severity="error",
+                    category=FILE_UNREADABLE,
+                    file=disp,
+                    line=0,
+                    message=(
+                        f"could not decode {disp}: {exc} - the file must be UTF-8 (or UTF-16 with a BOM)"
+                    ),
+                )
+            )
+            catalogs.append(cat)
             if on_file is not None:
                 on_file(disp)
             continue

@@ -777,7 +777,7 @@ def parse_tmdl_model(name: str, files: dict[str, str]) -> ModelCatalog:
 
 
 def decode_tmdl(raw: bytes) -> str:
-    """Decode a ``.tmdl`` file's bytes, BOM-aware.
+    """Decode a ``.tmdl`` (or ``.bim``) file's bytes, BOM-aware.
 
     A UTF-16 BOM (either endianness — what a Windows PowerShell 5 redirect
     produces) decodes as UTF-16; a UTF-8 BOM is stripped; everything else must
@@ -785,9 +785,23 @@ def decode_tmdl(raw: bytes) -> str:
     caller reports a diagnostic naming the file — decoding with
     ``errors="replace"`` would silently parse mojibake into an EMPTY catalog
     and certify an unscanned model as clean.
+
+    UTF-16-*without* a BOM is the dead spot the BOM checks miss: UTF-16-LE/BE of
+    ASCII source text is 100% valid UTF-8 (NUL is a legal UTF-8 codepoint), so
+    ``utf-8-sig`` decodes it to NUL-riddled text that matches no parser regex —
+    an EMPTY catalog certified clean (issue #22). A NUL byte never appears in
+    legitimate UTF-8 TMDL/JSON, so its presence means the bytes are not what we
+    can safely decode: raise ``UnicodeDecodeError`` (the same signal a genuine
+    decode failure gives) so the caller's error-severity file_unreadable path
+    fires, rather than certifying an unscanned model as clean. We deliberately do
+    NOT guess a UTF-16 encoding for a BOM-less file — a wrong guess would decode
+    non-TMDL garbage into an empty-looking catalog, reintroducing the very
+    silent-clean bug; a real UTF-16 export carries a BOM (handled above).
     """
     if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
         return raw.decode("utf-16")
+    if b"\x00" in raw:
+        raise UnicodeDecodeError("utf-8", raw, 0, 1, "NUL byte - not valid UTF-8 (UTF-16 without a BOM?)")
     return raw.decode("utf-8-sig")
 
 

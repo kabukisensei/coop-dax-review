@@ -7,6 +7,17 @@ field and are called out here.
 
 ## [Unreleased]
 ### Fixed
+- **An undecodable `.bim` is an error-severity `file_unreadable`, not a masked warning** (issue
+  #23): the `.bim` path read with `errors="replace"`, so a decode failure (e.g. a UTF-16 `.bim`
+  saved without a BOM) never surfaced as such — the mojibake then failed `json.loads` and was
+  recorded as a warning-severity `parse_failed`. A model whose only file was an unreadable `.bim`
+  therefore reported `verdict clean` and passed `--strict`, while the identical TMDL case fails
+  strict (issue #1). The `.bim` branch now decodes via the shared BOM-aware `decode_tmdl` (so a
+  UTF-16-with-BOM `.bim` parses and lints, matching the TMDL leg) and emits the same
+  error-severity `file_unreadable` diagnostic on a `UnicodeDecodeError`. Genuine JSON syntax errors
+  stay a warning `parse_failed`, matching the TMDL parse-failure policy. The shared `decode_tmdl`
+  now also raises on a NUL byte (a UTF-16-no-BOM file), closing the same silent-clean gap on the
+  TMDL leg (issue #22).
 - **TMDL property keywords are matched case-insensitively** (issue #24): `dataType`,
   `dataCategory`, `mode`, `fromColumn`, `toColumn`, `crossFilteringBehavior`, and `isActive` (and
   the `table`/`measure`/`column`/`calculationItem`/`partition`/`relationship` object headers) were
