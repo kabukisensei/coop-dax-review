@@ -1,5 +1,8 @@
 # coop-dax-review — build spec
 
+> **Historical build spec.** This is the original design document; for the *current* CLI surface and
+> agent JSON contract, `README.md` and `AGENTS.md` are canonical.
+
 ## What it is
 An **offline, advisory DAX/model standards linter** for our Power BI semantic models. It parses
 TMDL (and `.bim`) models, checks measures **and model structure** against `docs/standards.md`
@@ -50,11 +53,12 @@ See `RULES.md` for the taxonomy.
 ## CLI
 ```
 coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
-                      [--format text|json|markdown|html] [-o FILE] [--open/--no-open]
+                      [--format text|json|markdown|html|sarif] [-o FILE]
+                      [--html FILE] [--md FILE] [--sarif FILE] [--open/--no-open]
                       [--color/--no-color] [--baseline <path>] [--write-baseline <path>]
-                      [--min-severity ...] [--log-file <path>] [--strict]
+                      [--save-ignores] [--min-severity ...] [--log-file <path>] [--strict]
 coop-dax-review rules
-coop-dax-review upgrade           # prints the command to update; never self-applies (alias: update)
+coop-dax-review upgrade [--check] # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
 ```
 - Paths point at a PBIP/TMDL model folder (`*.SemanticModel/definition/...`) or a `.bim`. Run
@@ -73,7 +77,7 @@ coop-dax-review --version
 ## Agent integration contract (identical shape to coop-sql-review)
 ```json
 {
-  "tool": "coop-dax-review", "schema_version": 2, "version": "x.y.z",
+  "tool": "coop-dax-review", "schema_version": 3, "version": "x.y.z",
   "standards": {"path": "...", "sha256": "..."},
   "models_checked": 2,
   "verdict": {"clean": false, "highest_severity": "warning"},
