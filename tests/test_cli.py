@@ -116,6 +116,16 @@ def test_baseline_write_then_suppresses(tmp_path):
     assert "no issues found" in out  # all findings suppressed (agent-review items still pass through)
 
 
+def test_write_baseline_to_missing_dir_is_friendly_error(tmp_path):
+    # A typo'd/unwritable --write-baseline path must fail with the family's
+    # friendly one-line error, never a raw traceback (parity with the sql twin).
+    target = tmp_path / "no-such-dir" / "base.json"
+    result = CliRunner().invoke(cli, ["check", str(FIXTURES), "--write-baseline", str(target)])
+    assert result.exit_code == 1
+    assert "could not write baseline" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_stale_baseline_entry_warns(tmp_path):
     bl = tmp_path / "bl.json"
     bl.write_text('{"tool":"coop-dax-review","fingerprints":["deadbeef0000"]}\n', encoding="utf-8")

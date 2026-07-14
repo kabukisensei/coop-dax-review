@@ -708,7 +708,10 @@ def check(
         a.fingerprint() for a in result.agent_review
     }
     if write_baseline_path:
-        count = write_baseline(Path(write_baseline_path), sorted(present_fingerprints))
+        try:
+            count = write_baseline(Path(write_baseline_path), sorted(present_fingerprints))
+        except OSError as exc:
+            raise click.ClickException(f"could not write baseline to {write_baseline_path}: {exc}") from exc
         click.echo(
             f"Wrote baseline of {count} finding/agent-review entr{'y' if count == 1 else 'ies'} "
             f"to {write_baseline_path}",
