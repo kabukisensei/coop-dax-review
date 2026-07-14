@@ -7,6 +7,18 @@ field and are called out here.
 
 ## [Unreleased]
 ### Fixed
+- **TMDL triple-backtick verbatim expressions are parsed correctly** (issue #25): the TMDL
+  serializer emits a verbatim block (`measure X = ` ``` ` … ` ``` `) whenever an expression has
+  trailing whitespace or blank lines with whitespace. The parser previously stored the ` ``` `
+  fences as part of the measure's DAX, silently LOST a calculated column's whole body (the inline
+  ` ``` ` was captured as a truthy expression, skipping the body loop), and — because a verbatim
+  body is read "including indentation" — a body line dedented to column 0 truncated the entire
+  table, misparsing everything after it. `_parse_measures`, `_parse_calculation_items`, and the
+  calculated-column and table-block body loops now detect a bare opening fence, consume the body
+  verbatim (ignoring indentation and property-break rules) to the closing fence, and store the
+  fence-stripped DAX with `dax_line` pointing at the first body line; a trailing `formatString:` /
+  `dataType:` property after the block still binds. Presentation of stored DAX only — fingerprints
+  and the JSON contract shape are unchanged.
 - **`DAX-VALIDATION` no longer churns its baseline identity on unrelated model growth** (issue #26):
   the one model-level agent-review note embeds a volatile count + example measure names that changed
   whenever ANY measure was added, removed, or renamed anywhere in the model — so a baselined/ignored

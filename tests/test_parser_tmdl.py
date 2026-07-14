@@ -318,6 +318,108 @@ def test_multiline_calc_column_syntax_error_points_at_body_line():
     assert diags[0].line == 5
 
 
+# -- issue #25: TMDL triple-backtick verbatim expressions ------------------------------
+
+_FENCE = "```"  # the TMDL verbatim fence (three backticks)
+
+
+def test_verbatim_measure_body_has_no_fences_and_binds_trailing_property():
+    # The serializer emits `measure X = ```` for an expression with trailing
+    # whitespace; the fences must NOT end up in the stored DAX, and a property
+    # after the closing fence must still bind.
+    tmdl = (
+        "table Fact\n"  # 1
+        f"\tmeasure 'Sales: Rev' = {_FENCE}\n"  # 2: opening fence
+        "\t\tCALCULATE(\n"  # 3: body starts
+        "\t\t\tSUM(Fact[Amount]),\n"  # 4
+        "\t\t\tALL(Fact))\n"  # 5
+        f"\t\t{_FENCE}\n"  # 6: closing fence
+        "\t\tformatString: #,0\n"  # 7: property after the block
+        "\tmeasure 'Sales: Count' = COUNTROWS(Fact)\n"  # 8: next measure
+    )
+    cat = parse_tmdl_model("M", {"f.tmdl": tmdl})
+    by = {m.name: m for m in cat.measures}
+    assert set(by) == {"Sales: Rev", "Sales: Count"}  # neither measure lost
+    rev = by["Sales: Rev"]
+    assert _FENCE not in rev.dax  # fences stripped
+    assert rev.dax.startswith("CALCULATE(") and "ALL(Fact)" in rev.dax  # full body kept
+    assert rev.format_string == "#,0"  # trailing property still bound
+    assert rev.dax_line == 3  # first body line, not the declaration line
+    assert by["Sales: Count"].dax == "COUNTROWS(Fact)"  # next measure intact
+
+
+def test_verbatim_measure_dedented_body_does_not_truncate_the_table():
+    # A verbatim body is "read including indentation": a line dedented to column
+    # 0 must NOT be mistaken for the next top-level object (which would truncate
+    # the whole table and misparse the rest).
+    tmdl = (
+        "table Fact\n"  # 1
+        f"\tmeasure 'Sales: Rev' = {_FENCE}\n"  # 2: opening fence
+        "\t\tCALCULATE(\n"  # 3
+        "SUM(Fact[Amount]),\n"  # 4: DEDENTED to column 0
+        "\t\t\tALL(Fact))\n"  # 5
+        f"\t\t{_FENCE}\n"  # 6: closing fence
+        "\tmeasure 'Sales: Count' = COUNTROWS(Fact)\n"  # 7: still in the table
+        "\tcolumn Amount\n"  # 8: still in the table
+        "\t\tdataType: double\n"  # 9
+    )
+    cat = parse_tmdl_model("M", {"f.tmdl": tmdl})
+    table = cat.tables[0]
+    by = {m.name: m for m in cat.measures}
+    assert set(by) == {"Sales: Rev", "Sales: Count"}  # the table was NOT truncated
+    assert "SUM(Fact[Amount])" in by["Sales: Rev"].dax  # the dedented line is part of the body
+    assert _FENCE not in by["Sales: Rev"].dax
+    assert [c.name for c in table.columns] == ["Amount"]  # the trailing column parsed too
+    assert table.columns[0].data_type == "double"
+
+
+def test_verbatim_calculated_column_body_not_lost():
+    # A verbatim calc-column body was silently LOST (group(3) captured '```' as a
+    # truthy inline expression, skipping the body loop). It must now be captured,
+    # with a trailing dataType still binding.
+    tmdl = (
+        "table Fact\n"  # 1
+        f"\tcolumn Ratio = {_FENCE}\n"  # 2: opening fence
+        "\t\tDIVIDE(\n"  # 3: body starts
+        "Fact[Num],\n"  # 4: dedented body line
+        "\t\t\tFact[Den])\n"  # 5
+        f"\t\t{_FENCE}\n"  # 6: closing fence
+        "\t\tdataType: double\n"  # 7: property after the block
+        "\tcolumn Plain\n"  # 8: next column
+        "\t\tdataType: int64\n"  # 9
+    )
+    cat = parse_tmdl_model("M", {"f.tmdl": tmdl})
+    cols = {c.name: c for c in cat.tables[0].columns}
+    assert set(cols) == {"Ratio", "Plain"}
+    ratio = cols["Ratio"]
+    assert ratio.is_calculated is True
+    assert ratio.expression.startswith("DIVIDE(") and "Fact[Den]" in ratio.expression
+    assert _FENCE not in ratio.expression  # body captured, not just the fence
+    assert ratio.data_type == "double"  # trailing property still binds
+    assert ratio.dax_line == 3  # first body line
+    assert cols["Plain"].is_calculated is False and cols["Plain"].data_type == "int64"
+
+
+def test_verbatim_calculation_item_body_not_lost():
+    tmdl = (
+        "table Time\n"  # 1
+        "\tcalculationGroup\n"  # 2
+        f"\t\tcalculationItem YTD = {_FENCE}\n"  # 3: opening fence
+        "\t\t\tCALCULATE(\n"  # 4: body starts
+        "SELECTEDMEASURE(),\n"  # 5: dedented body line
+        "\t\t\t\tDATESYTD('Date'[Date]))\n"  # 6
+        f"\t\t\t{_FENCE}\n"  # 7: closing fence
+        "\t\tcalculationItem MTD = SELECTEDMEASURE()\n"  # 8: next item
+    )
+    cat = parse_tmdl_model("M", {"t.tmdl": tmdl})
+    items = {c.name: c for c in cat.calculation_items}
+    assert set(items) == {"YTD", "MTD"}  # neither item lost
+    ytd = items["YTD"]
+    assert ytd.dax.startswith("CALCULATE(") and "DATESYTD" in ytd.dax
+    assert _FENCE not in ytd.dax
+    assert ytd.dax_line == 4  # first body line
+
+
 def test_relationship_crossfilter_and_active():
     cat = parse_tmdl_model("Sales", {"model.tmdl": MODEL_TMDL})
     assert len(cat.relationships) == 1

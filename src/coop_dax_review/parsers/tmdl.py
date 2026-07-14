@@ -211,6 +211,55 @@ def _skip_block(lines: list[str], start: int) -> int:
     return i
 
 
+_VERBATIM_FENCE = "```"
+
+
+def _is_verbatim_open(inline: str) -> bool:
+    """Whether an inline expression is the OPENING of a TMDL verbatim block.
+
+    TMDL's serializer emits ``measure X = `​`​``` (three backticks right
+    after ``=``, nothing else on the line) whenever the expression has trailing
+    whitespace or blank lines with whitespace; the body then follows verbatim.
+    Only a bare fence opens a block — a real expression may legitimately contain
+    a triple-backtick *inside* it, so require the stripped inline to be exactly
+    the fence.
+    """
+    return inline.strip() == _VERBATIM_FENCE
+
+
+def _consume_verbatim(lines: list[str], decl_index: int) -> tuple[str, int, int]:
+    """Read a TMDL verbatim (triple-backtick) block.
+
+    ``decl_index`` is the file index of the ``... = `​`​``` declaration
+    line (whose inline part is the opening fence). Body lines are taken
+    **verbatim** — indentation is ignored and property/child-object break rules
+    do NOT apply, per the spec's "read verbatim including indentation" — until
+    the line whose stripped content is exactly the closing fence. Returns
+    ``(body, dax_line, next_index)`` where ``body`` is the fence-stripped
+    expression, ``dax_line`` is the 1-based file line of the first body line (or
+    the declaration line for an empty block), and ``next_index`` is the index of
+    the line just past the closing fence (or end-of-input if the block is
+    unterminated — a malformed block never runs off and swallows the rest).
+    """
+    body: list[str] = []
+    dax_line = 0
+    i = decl_index + 1
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() == _VERBATIM_FENCE:  # closing fence
+            i += 1
+            break
+        if dax_line == 0:
+            dax_line = i + 1
+        body.append(line)
+        i += 1
+    # Trailing whitespace is exactly what verbatim blocks preserve, but the
+    # stored DAX is scanned/reported line-oriented; keep interior content, drop
+    # only the trailing empty lines that the closing fence's own line implied.
+    text = "\n".join(body).rstrip("\n")
+    return text, (dax_line or decl_index + 1), i
+
+
 def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table | None, int]:
     """Parse one ``table`` block beginning at ``lines[start]``; return the
     Table and the index of the first line past the block. A header with no
@@ -282,12 +331,24 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
         if col:
             seen_child = True
             col_indent = _indent(raw)
+            inline_col = (col.group(3) or "").strip()
             current_column = Column(
                 name=_unquote(col.group(1)),
                 line=i + 1,
                 is_calculated=bool(col.group(2)),
-                expression=(col.group(3) or "").strip(),
+                expression=inline_col,
             )
+            # A verbatim (triple-backtick) calculated-column body: the inline
+            # part is just the opening fence, so read the following lines
+            # verbatim and store the fence-stripped DAX. Without this, group(3)
+            # captures '```' as a truthy inline expression and the whole body is
+            # silently LOST (issue #25).
+            if bool(col.group(2)) and _is_verbatim_open(inline_col):
+                body, dax_line, i = _consume_verbatim(lines, i)
+                current_column.expression = body.strip()
+                current_column.dax_line = dax_line
+                table.columns.append(current_column)
+                continue
             if current_column.expression:
                 current_column.dax_line = i + 1  # inline `column X = <DAX>`
             table.columns.append(current_column)
@@ -363,6 +424,19 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
 
         if stripped.lower().startswith("annotation ") and _DATE_TABLE_ANNOTATION in stripped.lower():
             table.is_date_table = True
+
+        # A child `measure`/`calculationItem` with a VERBATIM (triple-backtick)
+        # body: skip the block here so a body line dedented to column 0 (verbatim
+        # is "read including indentation") is NOT mistaken for the next top-level
+        # object and does not truncate the whole table (issue #25). The measure /
+        # calc-item is re-parsed in full from the table slice by _parse_measures
+        # / _parse_calculation_items; here we only need to step past it.
+        header = _MEASURE_RE.match(stripped) or _CALC_ITEM_RE.match(stripped)
+        if header and _is_verbatim_open(header.group(2)):
+            seen_child = True
+            current_column = None
+            _, _, i = _consume_verbatim(lines, i)
+            continue
 
         # Only a NEW CHILD OBJECT (measure/hierarchy/annotation/...) ends the
         # current column's property run. An unrecognized property-shaped line
@@ -482,39 +556,51 @@ def _parse_measures(lines: list[str], file: str, table_name: str, line_offset: i
         dax_parts: list[str] = []
         dax_line = 0
         in_comment = False
-        if inline:
-            dax_parts.append(inline)
-            dax_line = line_no
-            in_comment = _block_comment_open(inline, False)
-        i += 1
-        while i < len(lines):
-            nxt = lines[i]
-            inner = nxt.strip()
-            # DAX continues on lines indented deeper than the `measure` keyword;
-            # a line at the same/shallower indent (the next measure/column/
-            # partition) or a real measure property (the finite TMDL set —
-            # `formatString:`, the `=`-introduced `formatStringDefinition`
-            # block, ...) ends it. A line inside a still-open `/* ... */` block
-            # is always body text: the §12 header's `Purpose:` lines look like
-            # properties but are comment content.
-            if (
-                inner
-                and not in_comment
-                and (
-                    _indent(nxt) <= indent
-                    or _MEASURE_PROP_RE.match(inner)
-                    or _FORMATSTRING_DEF_RE.match(inner)
-                )
-            ):
-                break
-            if inner:
-                if dax_line == 0:
-                    dax_line = line_offset + i + 1
-                dax_parts.append(inner)
-                in_comment = _block_comment_open(inner, in_comment)
-            elif dax_parts:  # interior blank inside the body: keep for line mapping
-                dax_parts.append("")
+        # A verbatim (triple-backtick) measure body: the inline part is just the
+        # opening fence. Read the following lines verbatim (ignoring indentation
+        # and property-break rules) up to the closing fence, store the
+        # fence-stripped DAX, then fall through to the property scan below with
+        # `i` past the block (issue #25). Without this the fences are stored as
+        # part of the measure's DAX and a dedented body line truncates it.
+        if inline and _is_verbatim_open(inline):
+            body, body_line, i = _consume_verbatim(lines, i)
+            dax_parts = [body]
+            dax_line = line_offset + body_line
+        else:
+            if inline:
+                dax_parts.append(inline)
+                dax_line = line_no
+                in_comment = _block_comment_open(inline, False)
             i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                inner = nxt.strip()
+                # DAX continues on lines indented deeper than the `measure`
+                # keyword; a line at the same/shallower indent (the next measure/
+                # column/partition) or a real measure property (the finite TMDL
+                # set — `formatString:`, the `=`-introduced
+                # `formatStringDefinition` block, ...) ends it. A line inside a
+                # still-open `/* ... */` block is always body text: the §12
+                # header's `Purpose:` lines look like properties but are comment
+                # content.
+                if (
+                    inner
+                    and not in_comment
+                    and (
+                        _indent(nxt) <= indent
+                        or _MEASURE_PROP_RE.match(inner)
+                        or _FORMATSTRING_DEF_RE.match(inner)
+                    )
+                ):
+                    break
+                if inner:
+                    if dax_line == 0:
+                        dax_line = line_offset + i + 1
+                    dax_parts.append(inner)
+                    in_comment = _block_comment_open(inner, in_comment)
+                elif dax_parts:  # interior blank inside the body: keep for line mapping
+                    dax_parts.append("")
+                i += 1
         # The DAX loop stops at the measure's first property line; scan the
         # remaining property block (lines indented deeper than the measure) for
         # formatString / displayFolder. Stops at the next object (indent <= measure).
@@ -579,32 +665,39 @@ def _parse_calculation_items(
         dax_parts: list[str] = []
         dax_line = 0
         in_comment = False
-        if inline:
-            dax_parts.append(inline)
-            dax_line = line_no
-            in_comment = _block_comment_open(inline, False)
-        i += 1
-        while i < len(lines):
-            nxt = lines[i]
-            inner = nxt.strip()
-            if (
-                inner
-                and not in_comment
-                and (
-                    _indent(nxt) <= indent
-                    or _MEASURE_PROP_RE.match(inner)
-                    or _FORMATSTRING_DEF_RE.match(inner)
-                )
-            ):
-                break
-            if inner:
-                if dax_line == 0:
-                    dax_line = line_offset + i + 1
-                dax_parts.append(inner)
-                in_comment = _block_comment_open(inner, in_comment)
-            elif dax_parts:
-                dax_parts.append("")
+        # Verbatim (triple-backtick) calculationItem body — same handling as the
+        # measure parser (issue #25).
+        if inline and _is_verbatim_open(inline):
+            body, body_line, i = _consume_verbatim(lines, i)
+            dax_parts = [body]
+            dax_line = line_offset + body_line
+        else:
+            if inline:
+                dax_parts.append(inline)
+                dax_line = line_no
+                in_comment = _block_comment_open(inline, False)
             i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                inner = nxt.strip()
+                if (
+                    inner
+                    and not in_comment
+                    and (
+                        _indent(nxt) <= indent
+                        or _MEASURE_PROP_RE.match(inner)
+                        or _FORMATSTRING_DEF_RE.match(inner)
+                    )
+                ):
+                    break
+                if inner:
+                    if dax_line == 0:
+                        dax_line = line_offset + i + 1
+                    dax_parts.append(inner)
+                    in_comment = _block_comment_open(inner, in_comment)
+                elif dax_parts:
+                    dax_parts.append("")
+                i += 1
         format_string = ""
         while i < len(lines):
             nxt = lines[i]
