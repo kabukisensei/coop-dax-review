@@ -7,6 +7,15 @@ field and are called out here.
 
 ## [Unreleased]
 ### Fixed
+- **TMDL property keywords are matched case-insensitively** (issue #24): `dataType`,
+  `dataCategory`, `mode`, `fromColumn`, `toColumn`, `crossFilteringBehavior`, and `isActive` (and
+  the `table`/`measure`/`column`/`calculationItem`/`partition`/`relationship` object headers) were
+  matched case-sensitively while `isHidden`/`summarizeBy`/`displayFolder`/`formatString` already
+  accepted any casing. On hand-written / docs-derived / third-party-emitted TMDL (the MS overview
+  writes `datatype:`), a case-varied keyword silently dropped a column's type, dropped a
+  relationship's endpoints entirely, or flipped an inactive relationship to active — none marked by
+  a diagnostic. All the property/object regexes now carry `re.IGNORECASE`. Mainstream Power BI
+  Desktop/PBIP exports (always canonical camelCase) are unaffected.
 - **TMDL triple-backtick verbatim expressions are parsed correctly** (issue #25): the TMDL
   serializer emits a verbatim block (`measure X = ` ``` ` … ` ``` `) whenever an expression has
   trailing whitespace or blank lines with whitespace. The parser previously stored the ` ``` `

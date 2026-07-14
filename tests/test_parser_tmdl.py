@@ -430,6 +430,38 @@ def test_relationship_crossfilter_and_active():
     assert rel.is_active is False
 
 
+# -- issue #24: TMDL property keywords are matched case-insensitively ------------------
+
+
+def test_case_varied_keywords_parse_like_canonical_casing():
+    # Hand-written / docs-derived TMDL may lowercase keywords (the MS overview
+    # writes `datatype:`). A fully lowercased table + relationship block must
+    # parse identically to canonical camelCase — no silently dropped dataType,
+    # relationship endpoints, isActive, or crossFilteringBehavior.
+    lower_tbl = (
+        "table factsales\n\tcolumn productid\n\t\tdatatype: int64\n\tpartition p = m\n\t\tmode: directLake\n"
+    )
+    lower_model = (
+        "model M\n"
+        "\n"
+        "relationship rel1\n"
+        "\tfromcolumn: factsales.productid\n"
+        "\ttocolumn: dimproduct.productid\n"
+        "\tcrossfilteringbehavior: bothDirections\n"
+        "\tisactive: false\n"
+    )
+    cat = parse_tmdl_model("M", {"t.tmdl": lower_tbl, "model.tmdl": lower_model})
+    col = cat.tables[0].columns[0]
+    assert col.data_type == "int64"  # dataType captured despite lowercase keyword
+    assert cat.tables[0].storage_mode == "directLake"  # mode captured
+    assert len(cat.relationships) == 1  # endpoints captured -> relationship kept
+    rel = cat.relationships[0]
+    assert (rel.from_table, rel.from_column) == ("factsales", "productid")
+    assert (rel.to_table, rel.to_column) == ("dimproduct", "productid")
+    assert rel.cross_filter == "both"
+    assert rel.is_active is False  # isActive captured -> inactive relationship recognized
+
+
 def test_date_table_detected_via_data_category():
     tmdl = "table DimDate\n\tcolumn Date\n\t\tdataType: dateTime\n\t\tdataCategory: Time\n"
     cat = parse_tmdl_model("M", {"d.tmdl": tmdl})

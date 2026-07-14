@@ -26,27 +26,35 @@ from coop_dax_review.model import CalculationItem, Column, Measure, ModelCatalog
 
 # A table header line (plain or calculated). Name extraction is quote-aware
 # below so an '=' inside a quoted name isn't mistaken for the calc separator.
-_TABLE_HEADER_RE = re.compile(r"^table\s+\S")
-_TABLE_PLAIN_RE = re.compile(r"^table\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*$")
-_CALC_TABLE_RE = re.compile(r"^table\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$")
-_MEASURE_RE = re.compile(r"^measure\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$")
-_CALC_ITEM_RE = re.compile(r"^calculationItem\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$")
-_COLUMN_RE = re.compile(r"^column\s+('[^']*'|\"[^\"]*\"|[^=\s]+)\s*(=\s*(.*))?$")
-_DATATYPE_RE = re.compile(r"^dataType\s*:\s*(\S+)")
-_DATACATEGORY_RE = re.compile(r"^dataCategory\s*:\s*(\S+)")
+# TMDL property/object keywords are NOT case-rigid — the Microsoft TMDL overview
+# writes `datatype: int64` while Desktop exports write `dataType:` — so every
+# keyword regex is matched case-insensitively (mainstream PBIP/Desktop exports
+# serialize canonical camelCase and are unaffected; this only rescues hand-
+# written / docs-derived / third-party-emitted TMDL). isHidden/summarizeBy/
+# displayFolder/formatString already did this; the rest are brought in line here
+# (issue #24) so a case-varied dataType/from-/toColumn/isActive/crossFilter is
+# never silently dropped.
+_TABLE_HEADER_RE = re.compile(r"^table\s+\S", re.IGNORECASE)
+_TABLE_PLAIN_RE = re.compile(r"^table\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*$", re.IGNORECASE)
+_CALC_TABLE_RE = re.compile(r"^table\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$", re.IGNORECASE)
+_MEASURE_RE = re.compile(r"^measure\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$", re.IGNORECASE)
+_CALC_ITEM_RE = re.compile(r"^calculationItem\s+('[^']*'|\"[^\"]*\"|[^=]+?)\s*=\s*(.*)$", re.IGNORECASE)
+_COLUMN_RE = re.compile(r"^column\s+('[^']*'|\"[^\"]*\"|[^=\s]+)\s*(=\s*(.*))?$", re.IGNORECASE)
+_DATATYPE_RE = re.compile(r"^dataType\s*:\s*(\S+)", re.IGNORECASE)
+_DATACATEGORY_RE = re.compile(r"^dataCategory\s*:\s*(\S+)", re.IGNORECASE)
 # TMDL serializes a true boolean as the BARE keyword (`isHidden` on its own
 # line — what every real PBIP/Desktop export writes); the colon form
 # (`isHidden: true|false`) appears only in hand-written TMDL. Accept both.
 _ISHIDDEN_RE = re.compile(r"^isHidden(?:\s*:\s*(\S+))?\s*$", re.IGNORECASE)
 _SUMMARIZEBY_RE = re.compile(r"^summarizeBy\s*:\s*(\S+)", re.IGNORECASE)
 _DISPLAYFOLDER_RE = re.compile(r"^displayFolder\s*:\s*(.+?)\s*$", re.IGNORECASE)
-_PARTITION_RE = re.compile(r"^partition\s+(.+?)\s*=\s*(\w+)\s*$")
-_MODE_RE = re.compile(r"^mode\s*:\s*(\S+)")
-_RELATIONSHIP_RE = re.compile(r"^relationship\s+(\S+)")
-_FROM_COLUMN_RE = re.compile(r"^fromColumn\s*:\s*(.+?)\s*$")
-_TO_COLUMN_RE = re.compile(r"^toColumn\s*:\s*(.+?)\s*$")
-_CROSSFILTER_RE = re.compile(r"^crossFilteringBehavior\s*:\s*(\S+)")
-_ISACTIVE_RE = re.compile(r"^isActive\s*:\s*(\S+)")
+_PARTITION_RE = re.compile(r"^partition\s+(.+?)\s*=\s*(\w+)\s*$", re.IGNORECASE)
+_MODE_RE = re.compile(r"^mode\s*:\s*(\S+)", re.IGNORECASE)
+_RELATIONSHIP_RE = re.compile(r"^relationship\s+(\S+)", re.IGNORECASE)
+_FROM_COLUMN_RE = re.compile(r"^fromColumn\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_TO_COLUMN_RE = re.compile(r"^toColumn\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_CROSSFILTER_RE = re.compile(r"^crossFilteringBehavior\s*:\s*(\S+)", re.IGNORECASE)
+_ISACTIVE_RE = re.compile(r"^isActive\s*:\s*(\S+)", re.IGNORECASE)
 _PROPERTY_RE = re.compile(r"^[A-Za-z][\w]*\s*:")
 # Column/measure-scope booleans that real exports write bare (see _ISHIDDEN_RE).
 # Like a `name: value` property line, a bare boolean ends a multi-line DAX body.
