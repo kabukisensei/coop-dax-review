@@ -16,7 +16,8 @@ confirmed issues fixed) and every rule has a fires + a compliant case; precision
 per-rule verifiers are fixed and pinned in `tests/test_regressions.py` / `tests/test_m5*.py`.
 The UX surface was then brought to parity with `coop-sql-review`: `check` gained `--format
 markdown|html` + `-o/--output` and a self-contained, branded **HTML report** (inline CSS + base64
-logo in `data/cooptimize-logo.png`, `report.to_html`/`to_markdown`) that always writes to a file and
+logo from coop-review-core's package data (the family's single copy since 0.12.0),
+`report.to_html`/`to_markdown`) that always writes to a file and
 opens in the browser (`--open/--no-open`, auto-gated to interactive terminals via
 `_should_open_report`); an interactive **folder picker** (`questionary`, `_interactive_pick_paths`)
 appears when `check` is run with no paths in a TTY; and `upgrade`/`update` now **print** the install-
@@ -72,7 +73,7 @@ byte-identical (see "Standards-file invariant" below). Background reading: `SPEC
 
 ```sh
 make setup           # one-time: create .venv, install -e ".[dev]"
-make test            # .venv/bin/python -m pytest -q          (317 tests as of v0.9.0, <1s)
+make test            # .venv/bin/python -m pytest -q          (479 tests as of v0.13.0, <1s)
 make lint            # ruff check + ruff format --check on src tests — the exact CI gate
 make build           # rm -rf dist, then python -m build → dist/ holds only the current version
 make release-check   # scripts/release-check.sh: version gate + standards sync (see below)
@@ -146,8 +147,8 @@ PYTHONPATH="$HOME/Developer/coop-review-core/src:$PWD/src" .venv/bin/python -m p
 PYTHONPATH="$HOME/Developer/coop-review-core/src:$PWD/src" .venv/bin/python -m coop_dax_review check tests/fixtures
 ```
 
-Expect the full suite to pass exactly as with the installed core (verified: 317 passed). If tests
-pass shadowed but fail bare (or vice versa), the local core has diverged from the released one —
+Expect the full suite to pass exactly as with the installed core (the same N passed as a bare run).
+If tests pass shadowed but fail bare (or vice versa), the local core has diverged from the released one —
 that difference is the thing to investigate, not to paper over.
 
 After a core release, resync the venv so bare runs use the new core:
