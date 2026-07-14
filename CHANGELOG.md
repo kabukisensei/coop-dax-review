@@ -6,6 +6,14 @@ The JSON output is a machine contract (`schema_version`); breaking changes to it
 field and are called out here.
 
 ## [Unreleased]
+
+## [0.14.0] — 2026-07-14
+### Changed
+- Adopt **coop-review-core 0.5.0**: the pin is raised to `coop-review-core>=0.5,<0.6`. Core 0.5.0
+  made `add_ignores` raise a friendly `StandardsError` on an unreadable / unwritable / invalid
+  ignore target, and removed the dead `apply_plan` upgrade path — this tool's `upgrade` shim no
+  longer re-exports it (it was unused; `upgrade`/`update` print the command and never self-apply).
+
 ### Fixed
 - **TMDL calculated tables in the real export form are now detected and linted** (issue #21): a
   calculated table exports as a plain `table X` header plus `partition X = calculated` with the DAX
@@ -68,6 +76,12 @@ field and are called out here.
   the human note still reports the count/examples but the suppression identity is edit-stable.
   **Migration note:** an existing baseline entry for a `DAX-VALIDATION` item goes stale **once** (its
   fingerprint changed with this fix); it re-records on the next `--write-baseline`.
+- **`check --write-baseline` to an unwritable path fails with a friendly one-line error, not a raw
+  traceback** (issue #27): the write is guarded and mapped to a `ClickException` (exit 1), matching
+  the coop-sql-review twin.
+- `--save-ignores` surfaces core 0.5.0's friendly one-line error when the ignore target can't be
+  read or written, instead of leaking a raw traceback — the handler now catches `StandardsError`
+  alongside the existing `OSError` / `ValueError`.
 
 ## [0.13.0] — 2026-07-09
 ### Added
