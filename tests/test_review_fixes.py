@@ -255,6 +255,32 @@ def test_utf16_tmdl_model_is_actually_parsed_not_silently_clean(tmp_path, data):
     assert payload["verdict"]["clean"] is False
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        _UTF16_BODY.encode("utf-16-le"),  # NO BOM
+        _UTF16_BODY.encode("utf-16-be"),
+    ],
+    ids=["utf-16-le-no-bom", "utf-16-be-no-bom"],
+)
+def test_utf16_no_bom_tmdl_is_error_diagnosed_never_silently_clean(tmp_path, data):
+    # issue #22: UTF-16-LE/BE of ASCII TMDL is valid UTF-8 (NUL is a legal
+    # codepoint), so the utf-8-sig fallback used to decode it to NUL-riddled text
+    # that matched no regex -> an EMPTY catalog certified clean. The NUL guard in
+    # decode_tmdl now raises so the error-severity file_unreadable path fires:
+    # error-diagnosed, never silently clean.
+    target = tmp_path / "U.SemanticModel" / "definition" / "tables" / "T.tmdl"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(data)
+    payload = _check_json(str(tmp_path))
+    diags = [d for d in payload["diagnostics"] if d["category"] == "file_unreadable"]
+    assert diags and all(d["severity"] == "error" for d in diags)
+    assert payload["verdict"]["clean"] is False
+    assert not any(d["category"] == "parse_failed" for d in payload["diagnostics"])
+    strict = CliRunner().invoke(cli, ["check", str(tmp_path), "--strict", "--format", "json"])
+    assert strict.exit_code == 2
+
+
 def _write_undecodable_model(tmp_path):
     target = tmp_path / "B.SemanticModel" / "definition" / "tables" / "junk.tmdl"
     target.parent.mkdir(parents=True)

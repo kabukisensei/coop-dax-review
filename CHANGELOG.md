@@ -18,6 +18,14 @@ field and are called out here.
   stay a warning `parse_failed`, matching the TMDL parse-failure policy. The shared `decode_tmdl`
   now also raises on a NUL byte (a UTF-16-no-BOM file), closing the same silent-clean gap on the
   TMDL leg (issue #22).
+- **UTF-16 TMDL saved without a BOM no longer parses to an empty catalog certified clean** (issue
+  #22): UTF-16-LE/BE of ASCII TMDL is 100% valid UTF-8 (NUL is a legal codepoint), so the previous
+  `utf-8-sig` fallback in `decode_tmdl` never raised — the NUL-riddled text matched no parser regex,
+  yielding an EMPTY catalog with zero findings, zero diagnostics, `verdict clean`, and `--strict`
+  exit 0. `decode_tmdl`'s NUL-byte guard (shared with the issue-#23 `.bim` fix) now raises so the
+  error-severity `file_unreadable` path fires. Regression tests pin UTF-16-LE and -BE no-BOM TMDL to
+  an error-diagnosed, non-clean verdict. We deliberately do not guess a BOM-less UTF-16 encoding — a
+  real UTF-16 export carries a BOM (already handled).
 - **TMDL property keywords are matched case-insensitively** (issue #24): `dataType`,
   `dataCategory`, `mode`, `fromColumn`, `toColumn`, `crossFilteringBehavior`, and `isActive` (and
   the `table`/`measure`/`column`/`calculationItem`/`partition`/`relationship` object headers) were
