@@ -230,6 +230,69 @@ def test_calculated_table_expression_multiline_tmdl():
     assert [c.name for c in t.columns] == ["Region"]
 
 
+def test_calculated_table_partition_form_inline_tmdl():
+    # issue #21: the REAL export form of a calculated table is a plain `table X`
+    # header plus `partition X = calculated` with the DAX under `source =` — not
+    # the inline `table X = <DAX>` form (which the TMDL spec doesn't even define).
+    tmdl = (
+        "table Calc\n"
+        "\tcolumn A\n"
+        "\t\tdataType: int64\n"
+        "\tpartition Calc = calculated\n"
+        "\t\tmode: import\n"
+        "\t\tsource = FILTER(Sales, Sales[Amt] > 0)\n"
+    )
+    cat = parse_tmdl_model("m", {"t.tmdl": tmdl})
+    t = cat.tables[0]
+    assert t.is_calculated is True
+    assert t.expression == "FILTER(Sales, Sales[Amt] > 0)"
+    assert t.dax_line == 6  # the `source =` line
+    assert [c.name for c in t.columns] == ["A"]  # columns still parse
+    assert t.storage_mode == "import"  # the partition mode is still captured
+
+
+def test_calculated_table_partition_form_multiline_tmdl():
+    # issue #21: the multi-line `source =` body keeps the whole expression, with
+    # dax_line pointing at the first body line, and columns + mode still parse.
+    tmdl = (
+        "table Summary\n"
+        "\tcolumn Region\n"
+        "\t\tdataType: string\n"
+        "\tpartition Summary = calculated\n"
+        "\t\tsource =\n"
+        "\t\t\tADDCOLUMNS(\n"
+        "\t\t\t\tVALUES(Sales[Region]),\n"
+        '\t\t\t\t"Ratio", [Rev] / [Cost]\n'
+        "\t\t\t)\n"
+        "\t\tmode: import\n"
+    )
+    cat = parse_tmdl_model("m", {"t.tmdl": tmdl})
+    t = cat.tables[0]
+    assert t.is_calculated is True
+    assert t.expression.startswith("ADDCOLUMNS(") and "[Rev] / [Cost]" in t.expression
+    assert t.dax_line == 6  # first body line below `source =`
+    assert [c.name for c in t.columns] == ["Region"]
+    assert t.storage_mode == "import"
+
+
+def test_noncalculated_partition_source_is_not_a_calc_table():
+    # a `partition X = m` (Power Query) source must NOT be flagged calculated and
+    # its M query must NOT be captured as DAX.
+    tmdl = (
+        "table Regular\n"
+        "\tcolumn A\n"
+        "\t\tdataType: int64\n"
+        "\tpartition Regular = m\n"
+        "\t\tmode: import\n"
+        "\t\tsource = let Source = 1 in Source\n"
+    )
+    cat = parse_tmdl_model("m", {"t.tmdl": tmdl})
+    t = cat.tables[0]
+    assert t.is_calculated is False
+    assert t.expression == ""
+    assert t.storage_mode == "import"
+
+
 def test_calculated_table_expression_bim():
     model = {
         "name": "M",

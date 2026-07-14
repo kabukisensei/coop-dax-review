@@ -50,6 +50,12 @@ _SUMMARIZEBY_RE = re.compile(r"^summarizeBy\s*:\s*(\S+)", re.IGNORECASE)
 _DISPLAYFOLDER_RE = re.compile(r"^displayFolder\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _PARTITION_RE = re.compile(r"^partition\s+(.+?)\s*=\s*(\w+)\s*$", re.IGNORECASE)
 _MODE_RE = re.compile(r"^mode\s*:\s*(\S+)", re.IGNORECASE)
+# A partition's `source = <expr>` line. For a `calculated` partition the RHS is
+# the calculated table's DAX (inline, a verbatim ``` block, or a multi-line
+# body on the following deeper-indented lines) — the real-export form of a
+# calculated table (issue #21). The other source types (`m`, `entity`, ...) put
+# a query here too; we only keep the expression when the source is calculated.
+_SOURCE_RE = re.compile(r"^source\s*=\s*(.*)$", re.IGNORECASE)
 _RELATIONSHIP_RE = re.compile(r"^relationship\s+(\S+)", re.IGNORECASE)
 _FROM_COLUMN_RE = re.compile(r"^fromColumn\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _TO_COLUMN_RE = re.compile(r"^toColumn\s*:\s*(.+?)\s*$", re.IGNORECASE)
@@ -425,9 +431,23 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
         if part:
             seen_child = True
             current_column = None
-            mode, i = _consume_partition(lines, i, _indent(raw))
+            source_type = part.group(2)
+            mode, source_expr, source_line, i = _consume_partition(lines, i, _indent(raw))
             if mode:
                 table.storage_mode = mode
+            # A `partition X = calculated` with a `source = <DAX>` body is the
+            # real-export form of a calculated table (issue #21). The inline/
+            # multi-line `table X = <DAX>` header form handled above does not
+            # occur in exports; this branch is what Desktop / Tabular Editor /
+            # pbi-tools actually serialize, so is_calculated + the DAX must be
+            # captured here or every calc_tables=True rule silently skips it.
+            if source_type.lower() == "calculated":
+                table.is_calculated = True
+                # Keep any expression already captured from the inline header form
+                # (kept for back-compat); otherwise take the partition's source.
+                if source_expr and not table.expression:
+                    table.expression = source_expr
+                    table.dax_line = source_line
             continue
 
         if stripped.lower().startswith("annotation ") and _DATE_TABLE_ANNOTATION in stripped.lower():
@@ -459,9 +479,20 @@ def _parse_table_block(lines: list[str], start: int, file: str) -> tuple[Table |
     return table, i
 
 
-def _consume_partition(lines: list[str], start: int, header_indent: int) -> tuple[str, int]:
-    """Read a partition block; return (storage_mode, next_index)."""
+def _consume_partition(lines: list[str], start: int, header_indent: int) -> tuple[str, str, int, int]:
+    """Read a partition block; return (storage_mode, source_expr, source_line, next_index).
+
+    ``source_expr`` is the RHS of the partition's ``source = <expr>`` line — the
+    calculated table's DAX for a ``calculated`` partition (issue #21) — captured
+    inline, as a verbatim ``` block, or as a multi-line body on the following
+    deeper-indented lines (mirroring the measure body-continuation rules, keeping
+    interior blank lines for offset->line mapping). ``source_line`` is the 1-based
+    line where the DAX body starts (the ``source =`` line for an inline value, or
+    the first body line below it). Both are empty/0 when there is no ``source =``.
+    """
     mode = ""
+    source_expr = ""
+    source_line = 0
     i = start + 1
     while i < len(lines):
         raw = lines[i]
@@ -471,8 +502,46 @@ def _consume_partition(lines: list[str], start: int, header_indent: int) -> tupl
         m = _MODE_RE.match(stripped)
         if m:
             mode = m.group(1)
+            i += 1
+            continue
+        src = _SOURCE_RE.match(stripped)
+        if src:
+            source_indent = _indent(raw)
+            inline = src.group(1).strip()
+            # A verbatim (triple-backtick) source body: the inline part is just
+            # the opening fence; read the following lines verbatim and store the
+            # fence-stripped DAX (mirrors the measure/calculated-column handling
+            # of issue #25).
+            if _is_verbatim_open(inline):
+                source_expr, source_line, i = _consume_verbatim(lines, i)
+                source_expr = source_expr.strip()
+                continue
+            if inline:  # inline `source = <DAX>`
+                source_expr = inline
+                source_line = i + 1
+                i += 1
+                continue
+            # Multi-line `source =` body: the DAX is on the following lines
+            # indented deeper than the `source` keyword, up to the next partition
+            # property (`mode:`, ...) or the end of the partition block.
+            i += 1
+            dax_parts: list[str] = []
+            while i < len(lines):
+                nxt = lines[i]
+                inner = nxt.strip()
+                if inner and (_indent(nxt) <= source_indent or _PROPERTY_RE.match(inner)):
+                    break
+                if inner:
+                    if source_line == 0:
+                        source_line = i + 1
+                    dax_parts.append(inner)
+                elif dax_parts:  # interior blank inside the body: keep for line mapping
+                    dax_parts.append("")
+                i += 1
+            source_expr = "\n".join(dax_parts).strip()
+            continue
         i += 1
-    return mode, i
+    return mode, source_expr, (source_line or start + 1), i
 
 
 def _parse_relationships(lines: list[str], file: str) -> list[Relationship]:

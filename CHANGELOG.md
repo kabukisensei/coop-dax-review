@@ -7,6 +7,19 @@ field and are called out here.
 
 ## [Unreleased]
 ### Fixed
+- **TMDL calculated tables in the real export form are now detected and linted** (issue #21): a
+  calculated table exports as a plain `table X` header plus `partition X = calculated` with the DAX
+  under `source =` — never the inline `table X = <DAX>` form the parser previously supported (which
+  the TMDL spec doesn't even define). `_PARTITION_RE`'s source type was discarded and
+  `_consume_partition` read only `mode:`, so on every real TMDL model `Table.is_calculated` stayed
+  False and `Table.expression` stayed empty. Every rule that opts into `calc_tables=True`
+  (`DAX-USE-DIVIDE`, `DAX-NO-NESTED-CALCULATE`, `DAX-EARLIER-TO-VAR`, `DAX-IFERROR-WRAPPING`)
+  silently skipped calculated-table DAX, and `DAX-DEAD-INACTIVE-RELATIONSHIP` couldn't see a
+  `USERELATIONSHIP()` living in a calculated table (false positives). `_consume_partition` now also
+  captures the `source =` expression (inline, a verbatim ``` block, or a multi-line body, with
+  `dax_line` at the DAX body's first line), and a `calculated` source sets `is_calculated` +
+  `expression` — matching the `.bim` parser. A non-`calculated` source (`m`/`entity`) is left alone.
+  The inline `table X = <DAX>` handling is kept for compatibility.
 - **An undecodable `.bim` is an error-severity `file_unreadable`, not a masked warning** (issue
   #23): the `.bim` path read with `errors="replace"`, so a decode failure (e.g. a UTF-16 `.bim`
   saved without a BOM) never surfaced as such — the mojibake then failed `json.loads` and was

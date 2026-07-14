@@ -3,6 +3,7 @@
 from importlib import import_module
 
 from coop_dax_review.model import Column, Measure, ModelCatalog, Relationship, Table
+from coop_dax_review.parsers.tmdl import parse_tmdl_model
 from coop_dax_review.rules.base import RuleContext
 
 
@@ -102,6 +103,24 @@ def test_divide_fires_on_calculated_column():
 def test_divide_fires_on_calculated_table():
     (f,) = _run("dax_use_divide", _calc_table_catalog("FILTER(Sales, Sales[Amt] / 0 > 1)"))
     assert f.object == "Calc" and f.line == 1
+
+
+def test_divide_fires_on_partition_form_tmdl_calc_table():
+    # issue #21: the real-export calculated-table form (`partition X = calculated`
+    # + `source =`) must be parsed and linted, not silently skipped. Parse actual
+    # TMDL through the parser, then run the rule end to end.
+    tmdl = (
+        "table Calc\n"
+        "\tcolumn A\n"
+        "\t\tdataType: int64\n"
+        "\tpartition Calc = calculated\n"
+        "\t\tmode: import\n"
+        "\t\tsource = FILTER(Sales, Sales[Amt] / [Divisor] > 1)\n"
+    )
+    cat = parse_tmdl_model("m", {"t.tmdl": tmdl})
+    (f,) = _run("dax_use_divide", cat)
+    assert f.object == "Calc"
+    assert f.line == 6  # the `source =` line, where the `/` actually lives (dax_line)
 
 
 def test_divide_calc_column_compliant_silent():
