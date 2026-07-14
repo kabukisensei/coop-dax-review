@@ -49,6 +49,11 @@ def detect(ctx: RuleContext) -> list[AgentReviewItem]:
     return [
         ctx.review(
             object=ctx.model,
+            # The note embeds a volatile count + example measure names that change
+            # on ANY unrelated model growth; pin a stable fingerprint_key so a
+            # baselined/ignored item's identity survives those edits (issue #14
+            # pattern, applied to this agent rule).
+            fingerprint_key="non-trivial measures need validation",
             note=(
                 f"{count} {label} (e.g. {examples}) — confirm the §11 validation was "
                 "performed for each: test the base measure with no filters, test "

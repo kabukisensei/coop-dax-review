@@ -168,6 +168,68 @@ def test_volatile_fingerprint_survives_unrelated_edit_under_baseline(tmp_path):
     assert stale == []  # ...and the entry still matches: no stale-baseline warning
 
 
+# --- the volatile agent NOTE (issue #26: DAX-VALIDATION) ------------------------------
+
+
+def _detect_run(module: str, cat: ModelCatalog):
+    mod = import_module(f"coop_dax_review.rules.{module}")
+    return mod.detect(RuleContext(mod.RULE, cat))
+
+
+def _non_trivial(n: int) -> ModelCatalog:
+    # CALCULATE makes each measure "non-trivial" so DAX-VALIDATION fires; the
+    # model-level note embeds a count + example names that grow with n.
+    measures = [
+        Measure(name=f"M{i}", dax="CALCULATE(SUM(F[A]))", table="F", file="f.tmdl", line=1) for i in range(n)
+    ]
+    return ModelCatalog(name="M", tables=[Table(name="F", file="f.tmdl")], measures=measures)
+
+
+def test_validation_agent_note_fingerprint_stable_as_model_grows():
+    # issue #26: the model-level note "{count} non-trivial measures (e.g. ...)"
+    # churned the agent item's identity on ANY unrelated measure add/rename. A
+    # stable fingerprint_key now pins it.
+    one = _detect_run("dax_validation", _non_trivial(1))
+    two = _detect_run("dax_validation", _non_trivial(2))
+    assert len(one) == len(two) == 1
+    assert one[0].note != two[0].note  # the human note still carries the count + examples
+    assert one[0].fingerprint_key == "non-trivial measures need validation"
+    assert one[0].fingerprint() == two[0].fingerprint()  # identity survives model growth
+
+
+def _validation_model_dir(root, n_measures: int) -> None:
+    """A minimal TMDL model whose measures all use CALCULATE (so DAX-VALIDATION
+    fires with a growing count/example list in its one model-level note)."""
+    d = root / "M.SemanticModel" / "definition"
+    (d / "tables").mkdir(parents=True, exist_ok=True)
+    (d / "model.tmdl").write_text(
+        "model M\n\tdefaultPowerBIDataSourceVersion: powerBI_V3\n", encoding="utf-8"
+    )
+    lines = ["table Fact", "", "\tcolumn Amount", "\t\tdataType: double", "\t\tsummarizeBy: sum", ""]
+    for i in range(n_measures):
+        lines += [f"\tmeasure 'Fact: M{i}' = CALCULATE(SUM(Fact[Amount]))", ""]
+    (d / "tables" / "Fact.tmdl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _agent_by_rule(payload: dict, rule_id: str) -> list[dict]:
+    return [a for a in payload["agent_review"] if a["rule_id"] == rule_id]
+
+
+def test_validation_agent_note_survives_unrelated_edit_under_baseline(tmp_path):
+    # END-TO-END (issue #26 headline symptom): baseline a model whose one
+    # DAX-VALIDATION note says "1 non-trivial measure"; add a second non-trivial
+    # measure; the agent item must STAY suppressed (and the baseline entry must
+    # not go stale) instead of resurfacing on ordinary model growth.
+    _validation_model_dir(tmp_path, n_measures=1)
+    bl = tmp_path / "bl.json"
+    CliRunner().invoke(cli, ["check", str(tmp_path), "--write-baseline", str(bl)])
+    _validation_model_dir(tmp_path, n_measures=2)  # one unrelated non-trivial measure added
+    payload = _json_run(str(tmp_path), "--baseline", str(bl))
+    assert _agent_by_rule(payload, "DAX-VALIDATION") == []  # still suppressed
+    stale = [d for d in payload["diagnostics"] if d["category"] == "baseline_stale"]
+    assert stale == []  # ...and the entry still matches: no stale-baseline warning
+
+
 # --- occurrence ordinals: assignment + the ratchet fix -------------------------------
 
 

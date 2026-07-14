@@ -5,6 +5,17 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
+## [Unreleased]
+### Fixed
+- **`DAX-VALIDATION` no longer churns its baseline identity on unrelated model growth** (issue #26):
+  the one model-level agent-review note embeds a volatile count + example measure names that changed
+  whenever ANY measure was added, removed, or renamed anywhere in the model — so a baselined/ignored
+  item resurfaced and its baseline entry went stale on every ordinary edit. It now carries a stable
+  `fingerprint_key` (the same issue-#14 mechanism the three volatile-message finding rules use), so
+  the human note still reports the count/examples but the suppression identity is edit-stable.
+  **Migration note:** an existing baseline entry for a `DAX-VALIDATION` item goes stale **once** (its
+  fingerprint changed with this fix); it re-records on the next `--write-baseline`.
+
 ## [0.13.0] — 2026-07-09
 ### Added
 - **Four new rules** (issue #19), each canon-gated behind a new authored section in
