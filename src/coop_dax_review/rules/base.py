@@ -28,11 +28,12 @@ class Rule:
     category: str  # short topic, e.g. "naming", "calculate", "relationships"
     standard_ref: str  # section in standards.md, e.g. "§3"
     tier: int
-    kind: str = "deterministic"  # "deterministic" | "agent"
+    kind: str = "deterministic"  # "deterministic" | "agent" | "estate"
     default_enabled: bool = True  # off-by-default rules must be turned on in rules.yml
     params: dict[str, Any] = field(default_factory=dict)  # tunables from rules.yml (e.g. thresholds)
     check: Optional[Callable[["RuleContext"], list[Finding]]] = None
     detect: Optional[Callable[["RuleContext"], list[AgentReviewItem]]] = None
+    check_estate: Optional[Callable[["EstateContext"], list[Finding]]] = None
 
 
 class RuleContext:
@@ -109,6 +110,47 @@ class RuleContext:
             object=object,
             line=line,
             note=note,
+            standard_ref=self.rule.standard_ref,
+            fingerprint_key=fingerprint_key,
+        )
+
+class EstateContext:
+    """What an estate-level rule receives: all catalogs and factory helpers."""
+
+    def __init__(self, rule: Rule, catalogs: list[ModelCatalog]) -> None:
+        self.rule = rule
+        self.catalogs = catalogs
+
+    def param(self, name: str, default: Any) -> Any:
+        value = self.rule.params.get(name, default)
+        if isinstance(default, bool):
+            return bool(value)
+        if isinstance(default, int) and not isinstance(value, bool):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+        return value
+
+    def finding(
+        self,
+        *,
+        models: str,
+        object: str,
+        message: str,
+        file: str | None = None,
+        line: int = 0,
+        severity: str | None = None,
+        fingerprint_key: str = "",
+    ) -> Finding:
+        return Finding(
+            rule_id=self.rule.id,
+            severity=severity or self.rule.severity,
+            model=models,
+            file=file or "",
+            line=line,
+            object=object,
+            message=message,
             standard_ref=self.rule.standard_ref,
             fingerprint_key=fingerprint_key,
         )

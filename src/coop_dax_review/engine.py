@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from coop_dax_review.diagnostics import RULE_ERROR, Diagnostic
 from coop_dax_review.finding import AgentReviewItem, Finding, assign_occurrences, severity_rank
 from coop_dax_review.model import ModelCatalog
-from coop_dax_review.rules.base import Rule, RuleContext
+from coop_dax_review.rules.base import EstateContext, Rule, RuleContext
 
 
 @dataclass
@@ -81,6 +81,25 @@ def run_rules(catalogs: list[ModelCatalog], rules: list[Rule]) -> Result:
                         rule_id=rule.id,
                     )
                 )
+
+    if len(catalogs) > 1:
+        for rule in rules:
+            if rule.kind == "estate" and rule.check_estate is not None:
+                ctx = EstateContext(rule, catalogs)
+                try:
+                    result.findings.extend(rule.check_estate(ctx))
+                except Exception as exc:
+                    result.diagnostics.append(
+                        Diagnostic(
+                            severity="error",
+                            category=RULE_ERROR,
+                            file="estate",
+                            line=0,
+                            message=f"rule raised {type(exc).__name__}: {exc}",
+                            rule_id=rule.id,
+                        )
+                    )
+
     result.findings.sort(key=lambda f: f.sort_key())
     result.agent_review.sort(key=lambda a: a.sort_key())
     result.diagnostics.sort(key=lambda d: d.sort_key())

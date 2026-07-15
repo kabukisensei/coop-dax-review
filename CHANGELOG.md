@@ -14,6 +14,10 @@ field and are called out here.
   coop-sql-review's `explain` (CLI parity). New `standards.section_text` + `rules.rule_docs`
   helpers.
 
+## [0.17.0] - 2026-07-15
+### Added
+- Estate-level consistency rules: `DAX-ESTATE-MEASURE-DRIFT` and `DAX-ESTATE-FORMAT-DRIFT` to catch measure drift across models (issue #32)
+
 ## [0.16.0] - 2026-07-15
 ### Added
 - Accept `.pbit` (Power BI template) files as input without needing Power BI Desktop (issue #35)
