@@ -39,6 +39,7 @@ coop-dax-review check [MODEL_PATHS...] [--format text|json|markdown|html|sarif] 
                       [--write-baseline FILE] [--save-ignores]
                       [--min-severity error|warning|info] [--strict]
 coop-dax-review rules                 # list every rule (id, severity, tier, agent?)
+coop-dax-review explain <RULE-ID>     # a rule's rationale + standards excerpt (--format json)
 coop-dax-review upgrade [--check]     # show the command to update (never self-applies; alias: update)
 coop-dax-review --version
 ```

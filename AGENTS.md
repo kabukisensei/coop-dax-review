@@ -257,6 +257,7 @@ coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
                       [--write-baseline <path>] [--save-ignores] [--min-severity ...]
                       [--log-file <path>] [--strict] [--diff-against <prev.json>]
 coop-dax-review rules
+coop-dax-review explain <RULE-ID>  # a rule's rationale + standards excerpt + metadata (--format json); did-you-mean on a bad id
 coop-dax-review upgrade [--check] # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
 ```

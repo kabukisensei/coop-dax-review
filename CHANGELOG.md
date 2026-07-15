@@ -6,6 +6,13 @@ The JSON output is a machine contract (`schema_version`); breaking changes to it
 field and are called out here.
 
 ## [Unreleased]
+### Added
+- **`explain <RULE-ID>`** — print a rule's rationale (its module docstring), the cited
+  standards section excerpt (`§N` sliced from the bundled `docs/standards.md`), and its
+  metadata (severity, tier, default-enabled, params). Case-insensitive, with a did-you-mean
+  on an unknown id (usage error, exit 2); `--format json` for the agent. Mirrors
+  coop-sql-review's `explain` (CLI parity). New `standards.section_text` + `rules.rule_docs`
+  helpers.
 
 ## [0.15.0] — 2026-07-14
 ### Added

@@ -10,22 +10,22 @@ for deterministic ordering.
 from __future__ import annotations
 
 import importlib
+import inspect
 import pkgutil
 
 from coop_dax_review.rules.base import Rule, RuleContext
 
-__all__ = ["Rule", "RuleContext", "all_rules"]
+__all__ = ["Rule", "RuleContext", "all_rules", "rule_docs"]
 
 
-def all_rules() -> list[Rule]:
-    """Every discovered rule, sorted by id.
+def _discover():
+    """Yield ``(rule, module)`` for every ``dax_*.py`` rule module.
 
     A ``dax_*`` module that doesn't export a module-level ``RULE = Rule(...)``
     raises instead of being silently skipped — a broken/misdeclared rule module
     would otherwise ship a linter that quietly stops enforcing that rule on
     every model (the exact failure mode auto-discovery risks).
     """
-    rules: list[Rule] = []
     for info in pkgutil.iter_modules(__path__, prefix=f"{__name__}."):
         short = info.name.rsplit(".", 1)[1]
         if not short.startswith("dax_"):
@@ -37,6 +37,17 @@ def all_rules() -> list[Rule]:
                 f"rule module {info.name} must export a module-level RULE = Rule(...); "
                 f"found {type(rule).__name__}"
             )
-        rules.append(rule)
+        yield rule, module
+
+
+def all_rules() -> list[Rule]:
+    """Every discovered rule, sorted by id."""
+    rules = [rule for rule, _ in _discover()]
     rules.sort(key=lambda r: r.id)
     return rules
+
+
+def rule_docs() -> dict[str, str]:
+    """Map each rule id to its module's docstring — the rule's rationale prose,
+    consumed by ``coop-dax-review explain``."""
+    return {rule.id: (inspect.getdoc(module) or "") for rule, module in _discover()}
