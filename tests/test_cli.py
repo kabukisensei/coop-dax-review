@@ -61,7 +61,7 @@ def test_nonexistent_path_is_called_out_not_silently_clean():
 def test_empty_dir_reports_no_models_found(tmp_path):
     result = CliRunner().invoke(cli, ["check", str(tmp_path)])
     assert result.exit_code == 0
-    assert "No TMDL" in result.output
+    assert "No models" in result.output
 
 
 def test_malformed_tmdl_does_not_crash_the_run(monkeypatch):
@@ -100,7 +100,7 @@ def test_json_includes_models_checked():
 def test_build_catalogs_collects_raw_texts():
     from coop_dax_review.cli import build_catalogs, discover_inputs
 
-    tmdl, bim = discover_inputs((str(FIXTURES),))
+    tmdl, bim, pbit, pbix = discover_inputs((str(FIXTURES),))
     texts: dict = {}
     build_catalogs(tmdl, bim, texts_out=texts)
     assert texts  # raw text captured so inline directives can be scanned

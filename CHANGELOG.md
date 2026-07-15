@@ -14,6 +14,11 @@ field and are called out here.
   coop-sql-review's `explain` (CLI parity). New `standards.section_text` + `rules.rule_docs`
   helpers.
 
+## [0.16.0] - 2026-07-15
+### Added
+- Accept `.pbit` (Power BI template) files as input without needing Power BI Desktop (issue #35)
+- Emit friendly diagnostic for opaque `.pbix` files (issue #35)
+
 ## [0.15.0] — 2026-07-14
 ### Added
 - **`check --diff-against FILE`** — compare this run against a previous run's saved

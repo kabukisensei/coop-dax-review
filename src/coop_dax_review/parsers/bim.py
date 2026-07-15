@@ -18,14 +18,12 @@ def _expression_text(expression) -> str:
     return str(expression or "")
 
 
-def parse_bim_model(file: str, text: str) -> ModelCatalog:
-    """Parse one ``.bim`` file's JSON into a catalog. A JSON error is raised to
-    the caller, which records it as a diagnostic."""
-    data = json.loads(text)
+def build_catalog_from_dict(data: dict, file: str) -> ModelCatalog:
+    """Convert a TOM JSON dictionary into a ModelCatalog."""
+    
     model = data.get("model") or {}
     model_name = data.get("name") or model.get("name") or "model"
     catalog = ModelCatalog(name=model_name, file=file)
-
     table_modes: dict[str, str] = {}
     for table in model.get("tables") or []:
         if not isinstance(table, dict):
@@ -101,7 +99,6 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
                     description=_expression_text(measure.get("description")),
                 )
             )
-
         # Calculation group items (issue #8): their DAX lives on the table's
         # calculationGroup.calculationItems[]. Kept out of `measures` on purpose.
         calc_group = table.get("calculationGroup")
@@ -119,7 +116,6 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
                         format_string=item_fmt,
                     )
                 )
-
     for rel in model.get("relationships") or []:
         if not isinstance(rel, dict) or not (rel.get("fromTable") and rel.get("toTable")):
             continue
@@ -137,3 +133,8 @@ def parse_bim_model(file: str, text: str) -> ModelCatalog:
             )
         )
     return catalog
+def parse_bim_model(file: str, text: str) -> ModelCatalog:
+    """Parse one ``.bim`` file's JSON into a catalog. A JSON error is raised to
+    the caller, which records it as a diagnostic."""
+    data = json.loads(text)
+    return build_catalog_from_dict(data, file)

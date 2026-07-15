@@ -38,7 +38,7 @@ def test_unreadable_tmdl_degrades_only_its_own_model(tmp_path):
     if os.access(bad, os.R_OK):  # running as root / permissive FS — can't simulate
         pytest.skip("cannot make a file unreadable in this environment")
     try:
-        tmdl, bim = discover_inputs((str(tmp_path),))
+        tmdl, bim, pbit, pbix = discover_inputs((str(tmp_path),))
         catalogs = build_catalogs(tmdl, bim)
     finally:
         os.chmod(bad, stat.S_IRUSR | stat.S_IWUSR)
@@ -145,7 +145,7 @@ def test_measure_line_is_file_relative_for_second_table_block():
 def test_discovery_finds_uppercase_extensions(tmp_path):
     (tmp_path / "Model.TMDL").write_text("table T\n", encoding="utf-8")
     (tmp_path / "Legacy.BIM").write_text("{}", encoding="utf-8")
-    tmdl, bim = discover_inputs((str(tmp_path),))
+    tmdl, bim, pbit, pbix = discover_inputs((str(tmp_path),))
     assert len(tmdl) == 1 and len(bim) == 1
 
 

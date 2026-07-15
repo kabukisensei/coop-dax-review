@@ -12,7 +12,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def _render() -> str:
-    tmdl, bim = discover_inputs((str(FIXTURES),))
+    tmdl, bim, pbit, pbix = discover_inputs((str(FIXTURES),))
     result = run_rules(build_catalogs(tmdl, bim), all_rules())
     return json_text(result, version=__version__, standards={"path": "p", "sha256": "abc"})
 

@@ -57,7 +57,7 @@ def _measures_from_standards() -> list[tuple[str, str]]:
 
 
 def test_precision_guard_all_fixtures():
-    tmdl, bim = discover_inputs((str(_FIXTURES),))
+    tmdl, bim, pbit, pbix = discover_inputs((str(_FIXTURES),))
     assert tmdl or bim, "fixtures must contain at least one model to be a meaningful guard"
     catalogs = build_catalogs(tmdl, bim)
     diags = validate_dax_syntax(catalogs)

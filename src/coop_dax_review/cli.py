@@ -100,7 +100,7 @@ _BASELINE_HINT_THRESHOLD = 50
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
-def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
+def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path], list[Path], list[Path]]:
     """Expand paths into (sorted .tmdl files, sorted .bim files).
 
     Explicit files must be ``.tmdl`` / ``.bim`` — anything else is skipped
@@ -114,19 +114,22 @@ def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
     roots = [Path(p) for p in paths] or [Path(".")]
     tmdl: dict[Path, Path] = {}
     bim: dict[Path, Path] = {}
-    bucket_for = {".tmdl": tmdl, ".bim": bim}
+    pbit: dict[Path, Path] = {}
+    pbix: dict[Path, Path] = {}
+    bucket_for = {".tmdl": tmdl, ".bim": bim, ".pbit": pbit, ".pbix": pbix}
     for root in roots:
         if root.is_file():
             bucket = bucket_for.get(root.suffix.lower())
             if bucket is not None:
                 bucket.setdefault(root.resolve(), root)
+            elif root.suffix.lower() == ".pbix":
+                pbix.setdefault(root.resolve(), root)
         elif root.is_dir():
-            # Walk once and match on the lower-cased suffix so an uppercase
-            # extension (Model.TMDL) is found identically on every OS — rglob's
-            # own case handling differs between Windows and POSIX.
             for candidate in root.rglob("*"):
                 bucket = bucket_for.get(candidate.suffix.lower())
                 if bucket is None:
+                    if candidate.suffix.lower() == ".pbix":
+                        pbix.setdefault(candidate.resolve(), candidate)
                     continue
                 rel = candidate.relative_to(root)
                 if any(part.startswith(".") for part in rel.parts):
@@ -136,12 +139,15 @@ def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
     return (
         sorted(tmdl.values(), key=lambda p: display_path(p)),
         sorted(bim.values(), key=lambda p: display_path(p)),
+        sorted(pbit.values(), key=lambda p: display_path(p)),
+        sorted(pbix.values(), key=lambda p: display_path(p)),
     )
 
 
 def build_catalogs(
     tmdl_files: list[Path],
     bim_files: list[Path],
+    pbit_files: list[Path] = None,
     texts_out: dict[str, str] | None = None,
     on_file=None,
 ) -> list[ModelCatalog]:
@@ -256,6 +262,28 @@ def build_catalogs(
             catalogs.append(cat)
         if on_file is not None:
             on_file(disp)
+
+    pbit_files = pbit_files or []
+    for path in pbit_files:
+        disp = display.get(path) or display_path(path)
+        try:
+            from coop_dax_review.parsers.pbit import parse_pbit_model
+            catalogs.append(parse_pbit_model(disp))
+        except Exception as exc:
+            cat = ModelCatalog(name=Path(disp).stem, file=disp)
+            cat.diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    category=PARSE_FAILED,
+                    file=disp,
+                    line=0,
+                    message=f"could not parse .pbit model: {type(exc).__name__}: {exc}",
+                )
+            )
+            catalogs.append(cat)
+        if on_file is not None:
+            on_file(disp)
+
     return catalogs
 
 
@@ -679,13 +707,13 @@ def check(
         click.echo(f"path not found: {p}", err=True)
     # So is an explicit file that isn't a model: without the callout it would be
     # "checked" as a phantom .bim and confuse models_checked.
-    unsupported = [p for p in paths if Path(p).is_file() and Path(p).suffix.lower() not in (".tmdl", ".bim")]
+    unsupported = [p for p in paths if Path(p).is_file() and Path(p).suffix.lower() not in (".tmdl", ".bim", ".pbit", ".pbix")]
     for p in unsupported:
-        click.echo(f"not a TMDL (.tmdl) or .bim model file: {p}", err=True)
+        click.echo(f"not a model file (.tmdl, .bim, .pbit, .pbix): {p}", err=True)
 
-    tmdl_files, bim_files = discover_inputs(paths)
-    if not tmdl_files and not bim_files and not missing and not unsupported:
-        click.echo("No TMDL (.tmdl) or .bim models found.", err=True)
+    tmdl_files, bim_files, pbit_files, pbix_files = discover_inputs(paths)
+    if not tmdl_files and not bim_files and not pbit_files and not pbix_files and not missing and not unsupported:
+        click.echo("No models (.tmdl, .bim, .pbit, .pbix) found.", err=True)
     # No early return: a zero-model scan still renders the full report in every
     # format/sink (models_checked=0 is the machine contract's own disambiguator),
     # with scan_empty diagnostics below making the empty scan machine-visible.
@@ -693,11 +721,22 @@ def check(
     # Stderr-only + TTY-gated, so it never pollutes the report (stdout) or a
     # redirected --output file — a big model folder no longer looks hung.
     progress = Progress(should_enable(quiet=False))
-    progress.line(f"Checking {len(tmdl_files) + len(bim_files)} model file(s)...")
+    progress.line(f"Checking {len(tmdl_files) + len(bim_files) + len(pbit_files) + len(pbit_files) + len(pbix_files)} model file(s)...")
     raw_texts: dict[str, str] = {}
-    with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files)) as tick:
-        catalogs = build_catalogs(tmdl_files, bim_files, texts_out=raw_texts, on_file=tick)
+    with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files) + len(pbit_files)) as tick:
+        catalogs = build_catalogs(tmdl_files, bim_files, pbit_files, texts_out=raw_texts, on_file=tick)
     result = run_rules(catalogs, rules)
+    for pbix in pbix_files:
+        result.diagnostics.append(
+            Diagnostic(
+                severity="warning",
+                category="pbix_opaque_model",
+                file=str(pbix),
+                line=0,
+                message="cannot parse .pbix files (opaque model) - export to .pbit or PBIP format instead",
+            )
+        )
+
     # Cheap STRUCTURAL DAX validation (unbalanced parens/brackets, an unterminated
     # string/comment, an empty body) over every measure + calculated column —
     # error-severity SYNTAX_ERROR diagnostics, an orthogonal pass after the rules
@@ -705,16 +744,16 @@ def check(
     # gate). The `syntax_errors` knob + inline `ignore syntax` are applied below,
     # after inline-directive filtering, mirroring the coop-sql-review twin.
     result.diagnostics.extend(validate_dax_syntax(catalogs))
-    if not tmdl_files and not bim_files:
+    if not tmdl_files and not bim_files and not pbit_files and not pbix_files:
         # One scan_empty diagnostic per searched root, so an agent (or a CI log
         # reader) can tell a typo'd/empty path from a genuinely clean estate.
         for root in paths or (".",):
             if root in missing:
                 problem = "path not found"
             elif root in unsupported:
-                problem = "not a TMDL (.tmdl) or .bim model file"
+                problem = "not a model file (.tmdl, .bim, .pbit, .pbix)"
             else:
-                problem = "no TMDL (.tmdl) or .bim models found under this path"
+                problem = "no models (.tmdl, .bim, .pbit, .pbix) found under this path"
             result.diagnostics.append(
                 Diagnostic(
                     severity="warning",
