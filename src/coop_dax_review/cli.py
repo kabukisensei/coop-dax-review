@@ -12,6 +12,7 @@ legacy ``.bim`` file. Directories are searched recursively.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -31,6 +32,7 @@ from coop_review_core.cliutils import (
     with_upgrade_options,
     write_extra_report,
 )
+from coop_review_core.delta import DeltaError, delta_text, diff_envelopes
 
 from coop_dax_review import __version__
 from coop_dax_review.diagnostics import (
@@ -49,7 +51,15 @@ from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 from coop_dax_review.parsers.tmdl import decode_tmdl, group_tmdl_files, parse_tmdl_model
 from coop_dax_review.progress import Progress, should_enable
-from coop_dax_review.report import console_lines, json_text, log_text, to_html, to_markdown, to_sarif
+from coop_dax_review.report import (
+    console_lines,
+    json_text,
+    log_text,
+    to_html,
+    to_json,
+    to_markdown,
+    to_sarif,
+)
 from coop_dax_review.rules import all_rules
 from coop_dax_review.suppressions import (
     TOOL,
@@ -573,6 +583,15 @@ def cli(ctx: click.Context) -> None:
     help="Write a diagnostics log (parse problems, rule errors) to this file.",
 )
 @click.option("--strict", is_flag=True, help="Exit 2 if any reported finding remains (opt-in CI gate).")
+@click.option(
+    "--diff-against",
+    "diff_against",
+    type=click.Path(),
+    default=None,
+    help="Compare this run against a previous run's JSON envelope (a saved --format json "
+    "report): print a new / fixed / persisting delta to stderr. Advisory - never changes the "
+    "exit code.",
+)
 @click.pass_context
 def check(
     ctx: click.Context,
@@ -592,6 +611,7 @@ def check(
     save_ignores: bool,
     log_file: str | None,
     strict: bool,
+    diff_against: str | None,
 ) -> None:
     """Check Power BI models (TMDL folders or .bim files) against the standards.
 
@@ -865,6 +885,28 @@ def check(
 
     if save_ignores:
         _save_ignores_interactive(result.findings, config_path, cfg_path)
+
+    # --diff-against: compare this run to a previous run's saved JSON envelope and print
+    # a new / fixed / persisting delta to stderr (core's shared delta engine). Advisory —
+    # the exit code is never changed. The current envelope is this run's report (after
+    # suppressions + the --min-severity floor). A missing / non-JSON / wrong-tool file is a
+    # friendly usage error (exit 2), mirroring --baseline.
+    if diff_against:
+        try:
+            old_envelope = json.loads(Path(diff_against).read_text(encoding="utf-8-sig"))
+        except OSError as exc:
+            raise click.UsageError(f"--diff-against: cannot read {diff_against}: {exc}") from exc
+        except ValueError as exc:
+            raise click.UsageError(f"--diff-against: {diff_against} is not valid JSON: {exc}") from exc
+        if not isinstance(old_envelope, dict):
+            raise click.UsageError(
+                f"--diff-against: {diff_against} is not a review envelope (expected a JSON object)"
+            )
+        try:
+            delta = diff_envelopes(old_envelope, to_json(result, version=__version__, standards=standards))
+        except DeltaError as exc:
+            raise click.UsageError(str(exc)) from exc
+        click.echo(delta_text(delta, color=colorize), err=True, nl=False)
 
     # --strict also fails when NOTHING was checked (models_checked == 0): a
     # typo'd path in CI must not pass as silently clean. It ALSO fails on any

@@ -131,7 +131,7 @@ files or breaks the version gate will fail CI and block the next release anyway.
 ## Testing against local coop-review-core
 
 This tool's `.venv` holds a **non-editable installed copy** of the shared `coop-review-core`
-package (pyproject pins `coop-review-core>=0.5,<0.6`), NOT an editable link to the local
+package (pyproject pins `coop-review-core>=0.6,<0.7`), NOT an editable link to the local
 `coop-review-core` checkout. Edits to the local core checkout are therefore **invisible** to
 this tool until core is re-published and reinstalled. Do not `pip install -e` the local core into
 this venv — editable installs are unreliable here (see dev-env gotchas). The coop-* repos are
@@ -199,7 +199,7 @@ from: the `coop-data-doc` package (PyPI: `coop-data-doc`).
 
 **Shared core:** the tool-agnostic infrastructure lives in the published
 [`coop-review-core`](https://github.com/kabukisensei/coop-review-core) package (runtime dep;
-pinned `>=0.5,<0.6`). The
+pinned `>=0.6,<0.7`). The
 local modules `progress.py`, `diagnostics.py`, `suppressions.py`, `upgrade.py`, and `standards.py`
 are now **thin shims** that re-export / forward to core (baking in this tool's name); `finding.py`
 sources `SEVERITIES`/`severity_rank`/`at_or_above`/`fingerprint` from `coop_review_core.severity` but
@@ -255,7 +255,7 @@ coop-dax-review check [MODEL_PATHS...] --standards <path> [--config <path>]
                       [--html FILE] [--md FILE] [--sarif FILE]
                       [--open/--no-open] [--color/--no-color] [--baseline <path>]
                       [--write-baseline <path>] [--save-ignores] [--min-severity ...]
-                      [--log-file <path>] [--strict]
+                      [--log-file <path>] [--strict] [--diff-against <prev.json>]
 coop-dax-review rules
 coop-dax-review upgrade [--check] # prints the command to update; never self-applies (alias: update)
 coop-dax-review --version
