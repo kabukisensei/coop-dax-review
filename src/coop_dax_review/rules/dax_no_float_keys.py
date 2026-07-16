@@ -17,6 +17,7 @@ from coop_dax_review.rules.base import Rule, RuleContext
 
 
 def check(ctx: RuleContext) -> list[Finding]:
+    min_cardinality = int(ctx.param("min_cardinality", 10_000))
     by_key = {(normalize(t.name), normalize(c.name)): (t, c) for t in ctx.catalog.tables for c in t.columns}
     findings: list[Finding] = []
     for rel in ctx.catalog.relationships:
@@ -26,6 +27,9 @@ def check(ctx: RuleContext) -> list[Finding]:
                 continue
             tbl, col = entry
             if col.data_type.lower() == "double":
+                # Bypass tiny lookup tables if we have VPAX cardinality (issue #34)
+                if col.cardinality is not None and col.cardinality < min_cardinality:
+                    continue
                 findings.append(
                     ctx.finding(
                         # object + message stay byte-identical (fingerprint is line/path-
@@ -52,4 +56,5 @@ RULE = Rule(
     standard_ref="§16",
     tier=2,
     check=check,
+    params={"min_cardinality": 10_000},
 )

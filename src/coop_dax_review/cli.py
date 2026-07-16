@@ -51,6 +51,7 @@ from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 from coop_dax_review.parsers.tmdl import decode_tmdl, group_tmdl_files, parse_tmdl_model
+from coop_dax_review.parsers.vpax import apply_vpax_stats
 from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import (
     console_lines,
@@ -623,6 +624,13 @@ def cli(ctx: click.Context) -> None:
     "report): print a new / fixed / persisting delta to stderr. Advisory - never changes the "
     "exit code.",
 )
+@click.option(
+    "--vpax",
+    "vpax_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to a VPAX file for size-aware rules (default: auto-discovered alongside models).",
+)
 @click.pass_context
 def check(
     ctx: click.Context,
@@ -643,6 +651,7 @@ def check(
     log_file: str | None,
     strict: bool,
     diff_against: str | None,
+    vpax_path: str | None,
 ) -> None:
     """Check Power BI models (TMDL folders or .bim files) against the standards.
 
@@ -739,6 +748,29 @@ def check(
     raw_texts: dict[str, str] = {}
     with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files) + len(pbit_files)) as tick:
         catalogs = build_catalogs(tmdl_files, bim_files, pbit_files, texts_out=raw_texts, on_file=tick)
+        
+    resolved_vpax = None
+    if vpax_path:
+        resolved_vpax = Path(vpax_path)
+    else:
+        # Auto-discover `.vpax` files in the provided paths (roots)
+        roots = [Path(p) for p in paths] or [Path(".")]
+        for root in roots:
+            if root.is_dir():
+                found = list(root.glob("*.vpax"))
+                if found:
+                    resolved_vpax = found[0]
+                    break
+            elif root.is_file() and root.parent.is_dir():
+                found = list(root.parent.glob("*.vpax"))
+                if found:
+                    resolved_vpax = found[0]
+                    break
+    
+    if resolved_vpax and catalogs:
+        progress.line(f"Loading VPAX stats from {resolved_vpax.name}...")
+        apply_vpax_stats(catalogs, resolved_vpax)
+
     result = run_rules(catalogs, rules)
     for pbix in pbix_files:
         result.diagnostics.append(

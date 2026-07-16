@@ -49,6 +49,8 @@ class Column:
     dax_line: int = 0  # 1-based line where a calculated column's DAX body starts
     # (== line for `column X = <DAX>` inline; line+ for the multi-line form;
     # 0 for .bim columns and plain data columns — same semantics as Measure.dax_line)
+    cardinality: int | None = None  # from VPAX, if provided
+    size_bytes: int | None = None  # from VPAX, if provided
 
 
 @dataclass
