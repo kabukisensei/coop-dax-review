@@ -1,7 +1,5 @@
-import pytest
 import zipfile
 import json
-from pathlib import Path
 from click.testing import CliRunner
 
 from coop_dax_review.cli import cli
