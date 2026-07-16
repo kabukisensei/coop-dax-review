@@ -26,6 +26,7 @@ from coop_dax_review.diagnostics import Diagnostic
 @dataclass
 class ReportReference:
     """A field reference extracted from a PBIR report visual."""
+
     field: str
     visual_file: str
     line: int = 0

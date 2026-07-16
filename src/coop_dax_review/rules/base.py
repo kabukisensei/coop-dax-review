@@ -114,6 +114,7 @@ class RuleContext:
             fingerprint_key=fingerprint_key,
         )
 
+
 class EstateContext:
     """What an estate-level rule receives: all catalogs and factory helpers."""
 

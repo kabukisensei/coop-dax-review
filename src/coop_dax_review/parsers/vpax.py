@@ -29,7 +29,7 @@ def load_vpax(vpax_path: str | Path) -> dict[str, dict[str, dict[str, int]]]:
         with zipfile.ZipFile(path, "r") as z:
             if "DaxVpaView.json" not in z.namelist():
                 raise ValueError("VPAX file does not contain DaxVpaView.json")
-            
+
             # VPAX json is usually UTF-16 LE encoded, but zipfile read returns bytes.
             raw_bytes = z.read("DaxVpaView.json")
     except zipfile.BadZipFile as exc:
@@ -61,12 +61,12 @@ def load_vpax(vpax_path: str | Path) -> dict[str, dict[str, dict[str, int]]]:
         for column in table.get("Columns", []):
             c_name = normalize(column.get("ColumnName", ""))
             cardinality = column.get("ColumnCardinality", 0)
-            
+
             # Sum up sizes: DataSize + DictionarySize
             data_size = column.get("DataSize", 0)
             dict_size = column.get("DictionarySize", 0)
             total_size = data_size + dict_size
-            
+
             t_stats[c_name] = {
                 "cardinality": cardinality,
                 "size_bytes": total_size,
@@ -79,7 +79,7 @@ def load_vpax(vpax_path: str | Path) -> dict[str, dict[str, dict[str, int]]]:
 
 def apply_vpax_stats(catalogs: list[ModelCatalog], vpax_path: Path) -> None:
     """Load stats from a VPAX file and apply them to the models in place.
-    
+
     If the VPAX file is out of sync with the model (missing tables/columns),
     a diagnostic is added to the catalog.
     """
@@ -108,10 +108,10 @@ def apply_vpax_stats(catalogs: list[ModelCatalog], vpax_path: Path) -> None:
             if t_norm not in stats:
                 stale_messages.append(f"table '{table.name}' not found in VPAX")
                 continue
-            
+
             vpax_used_tables.add(t_norm)
             t_stats = stats[t_norm]
-            
+
             for column in table.columns:
                 c_norm = normalize(column.name)
                 if c_norm not in t_stats:
@@ -119,7 +119,7 @@ def apply_vpax_stats(catalogs: list[ModelCatalog], vpax_path: Path) -> None:
                         # Calculated columns might not be in VPAX depending on export options
                         stale_messages.append(f"column '{table.name}[{column.name}]' not found in VPAX")
                     continue
-                
+
                 c_stats = t_stats[c_norm]
                 column.cardinality = c_stats["cardinality"]
                 column.size_bytes = c_stats["size_bytes"]

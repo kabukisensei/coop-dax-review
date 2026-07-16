@@ -180,14 +180,18 @@ def test_keepfilters_per_calculate_not_suppressed_by_a_sibling(make_catalog):
     items = _run("coop_dax_review.rules.dax_keepfilters_needed", make_catalog(measures=[("Sales: A", dax)]))
     assert len(items) == 1  # only the bare-filter CALCULATE
 
+
 # -- DAX-ESTATE-MEASURE-DRIFT -----------------------------------------------
+
 
 def _run_estate(rule_module, catalogs):
     from importlib import import_module
     from coop_dax_review.rules.base import EstateContext
+
     mod = import_module(rule_module)
     ctx = EstateContext(mod.RULE, catalogs)
     return mod.check_estate(ctx)
+
 
 def test_estate_measure_drift_fires(make_catalog):
     c1 = make_catalog(name="ModA", measures=[("Sales", "SUM(x)")])
@@ -196,6 +200,7 @@ def test_estate_measure_drift_fires(make_catalog):
     assert len(res) == 1
     assert "ModA <> ModB" in res[0].model
 
+
 def test_estate_measure_drift_compliant(make_catalog):
     c1 = make_catalog(name="ModA", measures=[("Sales", "SUM(x)")])
     c2 = make_catalog(name="ModB", measures=[("Sales", "SUM(x)")])
@@ -203,6 +208,7 @@ def test_estate_measure_drift_compliant(make_catalog):
 
 
 # -- DAX-ESTATE-FORMAT-DRIFT ------------------------------------------------
+
 
 def test_estate_format_drift_fires(make_catalog):
     c1 = make_catalog(name="ModA")
@@ -213,10 +219,10 @@ def test_estate_format_drift_fires(make_catalog):
     assert len(res) == 1
     assert "ModA <> ModB" in res[0].model
 
+
 def test_estate_format_drift_compliant(make_catalog):
     c1 = make_catalog(name="ModA")
     c1.measures.append(type("Measure", (), {"name": "Sales", "format_string": "0"})())
     c2 = make_catalog(name="ModB")
     c2.measures.append(type("Measure", (), {"name": "Sales", "format_string": "0"})())
     assert not _run_estate("coop_dax_review.rules.dax_estate_format_drift", [c1, c2])
-

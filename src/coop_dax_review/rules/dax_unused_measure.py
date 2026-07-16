@@ -20,13 +20,13 @@ def detect(ctx: RuleContext) -> list[AgentReviewItem]:
         return []
 
     items: list[AgentReviewItem] = []
-    
+
     # 1. Gather all fields referenced in the local report
     def _norm(s: str) -> str:
         while len(s) >= 2 and s[0] in "'\"[" and s[-1] in "'\"]":
             s = s[1:-1].strip()
         return s.lower()
-        
+
     report_used = set()
     for ref in ctx.catalog.report_refs:
         match = re.match(r"^([^\[]+)\[(.*)\]$", ref.field)
@@ -34,13 +34,13 @@ def detect(ctx: RuleContext) -> list[AgentReviewItem]:
             # We only track the property (measure name) here for simplicity,
             # as measure names are globally unique in a model.
             report_used.add(_norm(match.group(2)))
-            
+
     # 2. Gather all measure names used inside DAX expressions within the model
     model_used = set()
     # Simple regex to extract `[MeasureName]` from DAX strings
     # This might slightly over-match (e.g. columns), but that's safe (reduces false positives).
     dax_ref_re = re.compile(r"\[([^\]]+)\]")
-    
+
     def extract_refs(dax: str):
         for match in dax_ref_re.finditer(dax):
             model_used.add(normalize(match.group(1)))
@@ -60,7 +60,7 @@ def detect(ctx: RuleContext) -> list[AgentReviewItem]:
     for measure in ctx.catalog.measures:
         if measure.is_hidden:
             continue
-            
+
         n_measure = normalize(measure.name)
         if n_measure not in report_used and n_measure not in model_used:
             items.append(

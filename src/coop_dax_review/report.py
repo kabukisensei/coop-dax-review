@@ -567,7 +567,7 @@ def delta_html(delta: EnvelopeDelta, *, version: str) -> str:
     if delta.standards_changed:
         parts.append(
             f'<div class="advisory">Standards changed ({esc(str(delta.old_standards_sha256)[:10])} &rarr; '
-            f'{esc(str(delta.new_standards_sha256)[:10])}) - findings may differ because the rules changed, not the code.</div>'
+            f"{esc(str(delta.new_standards_sha256)[:10])}) - findings may differ because the rules changed, not the code.</div>"
         )
 
     def _render_group(findings: list[dict], title: str) -> None:

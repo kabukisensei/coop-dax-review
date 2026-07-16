@@ -14,12 +14,12 @@ from coop_dax_review.rules.base import Rule, RuleContext
 def check(ctx: RuleContext) -> list[Finding]:
     threshold = int(ctx.param("threshold", 1_000_000))
     findings: list[Finding] = []
-    
+
     for table in ctx.catalog.tables:
         for column in table.columns:
             if column.cardinality is None:
                 continue
-            
+
             if column.data_type.lower() == "string" and column.cardinality > threshold:
                 findings.append(
                     ctx.finding(

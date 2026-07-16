@@ -749,7 +749,7 @@ def check(
     raw_texts: dict[str, str] = {}
     with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files) + len(pbit_files)) as tick:
         catalogs = build_catalogs(tmdl_files, bim_files, pbit_files, texts_out=raw_texts, on_file=tick)
-        
+
     resolved_vpax = None
     if vpax_path:
         resolved_vpax = Path(vpax_path)
@@ -767,11 +767,11 @@ def check(
                 if found:
                     resolved_vpax = found[0]
                     break
-    
+
     if resolved_vpax and catalogs:
         progress.line(f"Loading VPAX stats from {resolved_vpax.name}...")
         apply_vpax_stats(catalogs, resolved_vpax)
-        
+
     # Apply PBIR report awareness (issue #33)
     if catalogs:
         progress.line("Scanning for PBIR report references...")
@@ -779,8 +779,8 @@ def check(
             model_dir = Path(catalog.file).parent
             if model_dir.name.endswith(".SemanticModel"):
                 parent_dir = model_dir.parent
-                basename = model_dir.name[:-len(".SemanticModel")]
-                
+                basename = model_dir.name[: -len(".SemanticModel")]
+
                 exact_report = parent_dir / f"{basename}.Report"
                 if exact_report.is_dir():
                     refs = parse_report_references(exact_report)

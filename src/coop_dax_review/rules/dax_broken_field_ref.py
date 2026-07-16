@@ -15,7 +15,7 @@ from coop_dax_review.rules.base import Rule, RuleContext
 
 def check(ctx: RuleContext) -> list[Finding]:
     findings: list[Finding] = []
-    
+
     # Pre-compute valid entity names
     valid_tables = ctx.catalog.table_names
     valid_columns = ctx.catalog.column_names
@@ -30,26 +30,26 @@ def check(ctx: RuleContext) -> list[Finding]:
         match = re.match(r"^([^\[]+)\[(.*)\]$", ref.field)
         if not match:
             continue
-            
+
         entity = match.group(1).strip()
         prop = match.group(2).strip()
-        
+
         # Strip quotes/brackets for normalization
         def _norm(s: str) -> str:
             while len(s) >= 2 and s[0] in "'\"[" and s[-1] in "'\"]":
                 s = s[1:-1].strip()
             return s.lower()
-            
+
         n_entity = _norm(entity)
         n_prop = _norm(prop)
-        
+
         # Is it broken?
         is_broken = False
         if n_entity not in valid_tables:
             is_broken = True
         elif n_prop not in valid_columns and n_prop not in valid_measures:
             is_broken = True
-            
+
         if is_broken:
             # deduplicate identical bindings per visual file to reduce noise
             dedup_key = (ref.visual_file, n_entity, n_prop)
@@ -60,7 +60,7 @@ def check(ctx: RuleContext) -> list[Finding]:
                         object=ref.field,
                         file=ref.visual_file,
                         line=ref.line,
-                        message=f"report references field '{ref.field}' which does not exist in the model (broken visual)."
+                        message=f"report references field '{ref.field}' which does not exist in the model (broken visual).",
                     )
                 )
 

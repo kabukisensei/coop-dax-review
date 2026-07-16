@@ -20,7 +20,7 @@ def _expression_text(expression) -> str:
 
 def build_catalog_from_dict(data: dict, file: str) -> ModelCatalog:
     """Convert a TOM JSON dictionary into a ModelCatalog."""
-    
+
     model = data.get("model") or {}
     model_name = data.get("name") or model.get("name") or "model"
     catalog = ModelCatalog(name=model_name, file=file)
@@ -133,6 +133,8 @@ def build_catalog_from_dict(data: dict, file: str) -> ModelCatalog:
             )
         )
     return catalog
+
+
 def parse_bim_model(file: str, text: str) -> ModelCatalog:
     """Parse one ``.bim`` file's JSON into a catalog. A JSON error is raised to
     the caller, which records it as a diagnostic."""

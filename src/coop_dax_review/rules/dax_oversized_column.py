@@ -13,23 +13,23 @@ from coop_dax_review.rules.base import Rule, RuleContext
 def check(ctx: RuleContext) -> list[Finding]:
     threshold_pct = float(ctx.param("threshold_pct", 20.0))
     min_bytes = int(ctx.param("min_bytes", 50_000_000))
-    
+
     total_model_size = 0
     for table in ctx.catalog.tables:
         for column in table.columns:
             if column.size_bytes is not None:
                 total_model_size += column.size_bytes
-                
+
     if total_model_size == 0:
         return []
 
     findings: list[Finding] = []
-    
+
     for table in ctx.catalog.tables:
         for column in table.columns:
             if column.size_bytes is None:
                 continue
-            
+
             if column.size_bytes >= min_bytes:
                 pct = (column.size_bytes / total_model_size) * 100
                 if pct > threshold_pct:

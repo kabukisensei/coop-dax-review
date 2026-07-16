@@ -60,41 +60,41 @@ def _normalize_id(s: str) -> str:
 def parse_report_references(report_dir: Path) -> list[ReportReference]:
     """Scan a .Report folder for field references."""
     refs: list[ReportReference] = []
-    
+
     # Check definition.pbir to ensure it's a valid PBIR root (or just scan pages)
     pages_dir = report_dir / "definition" / "pages"
     if not pages_dir.is_dir():
         return refs
-        
+
     for visual_json in pages_dir.rglob("visual.json"):
         try:
             data = json.loads(visual_json.read_text(encoding="utf-8-sig", errors="replace"), strict=False)
         except (OSError, json.JSONDecodeError):
             continue
-            
+
         if not isinstance(data, dict):
             continue
-            
+
         visual_obj = data.get("visual")
         if not isinstance(visual_obj, dict):
             continue
-            
+
         bindings: list[tuple[str, str]] = []
         _collect_bindings(visual_obj, bindings)
         _collect_bindings(data.get("filterConfig") or {}, bindings)
-        
+
         for entity, prop in bindings:
             if _AUTO_DATETIME_RE.match(entity):
                 continue
-            
+
             norm_entity = _normalize_id(entity)
             norm_prop = _normalize_id(prop)
-            refs.append(ReportReference(
-                field=f"{norm_entity}[{norm_prop}]",
-                visual_file=visual_json.as_posix(),
-                line=0
-            ))
-            
+            refs.append(
+                ReportReference(
+                    field=f"{norm_entity}[{norm_prop}]", visual_file=visual_json.as_posix(), line=0
+                )
+            )
+
     # Also parse definition/report.json for report-level filters, etc. if needed
     report_json = report_dir / "definition" / "report.json"
     if report_json.is_file():
@@ -105,11 +105,13 @@ def parse_report_references(report_dir: Path) -> list[ReportReference]:
                 _collect_bindings(data.get("filterConfig") or {}, bindings)
                 for entity, prop in bindings:
                     if not _AUTO_DATETIME_RE.match(entity):
-                        refs.append(ReportReference(
-                            field=f"{_normalize_id(entity)}[{_normalize_id(prop)}]",
-                            visual_file=report_json.as_posix(),
-                            line=0
-                        ))
+                        refs.append(
+                            ReportReference(
+                                field=f"{_normalize_id(entity)}[{_normalize_id(prop)}]",
+                                visual_file=report_json.as_posix(),
+                                line=0,
+                            )
+                        )
         except (OSError, json.JSONDecodeError):
             pass
 
