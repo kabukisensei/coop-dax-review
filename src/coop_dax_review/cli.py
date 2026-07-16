@@ -268,6 +268,7 @@ def build_catalogs(
         disp = display.get(path) or display_path(path)
         try:
             from coop_dax_review.parsers.pbit import parse_pbit_model
+
             catalogs.append(parse_pbit_model(disp))
         except Exception as exc:
             cat = ModelCatalog(name=Path(disp).stem, file=disp)
@@ -707,12 +708,23 @@ def check(
         click.echo(f"path not found: {p}", err=True)
     # So is an explicit file that isn't a model: without the callout it would be
     # "checked" as a phantom .bim and confuse models_checked.
-    unsupported = [p for p in paths if Path(p).is_file() and Path(p).suffix.lower() not in (".tmdl", ".bim", ".pbit", ".pbix")]
+    unsupported = [
+        p
+        for p in paths
+        if Path(p).is_file() and Path(p).suffix.lower() not in (".tmdl", ".bim", ".pbit", ".pbix")
+    ]
     for p in unsupported:
         click.echo(f"not a model file (.tmdl, .bim, .pbit, .pbix): {p}", err=True)
 
     tmdl_files, bim_files, pbit_files, pbix_files = discover_inputs(paths)
-    if not tmdl_files and not bim_files and not pbit_files and not pbix_files and not missing and not unsupported:
+    if (
+        not tmdl_files
+        and not bim_files
+        and not pbit_files
+        and not pbix_files
+        and not missing
+        and not unsupported
+    ):
         click.echo("No models (.tmdl, .bim, .pbit, .pbix) found.", err=True)
     # No early return: a zero-model scan still renders the full report in every
     # format/sink (models_checked=0 is the machine contract's own disambiguator),
@@ -721,7 +733,9 @@ def check(
     # Stderr-only + TTY-gated, so it never pollutes the report (stdout) or a
     # redirected --output file — a big model folder no longer looks hung.
     progress = Progress(should_enable(quiet=False))
-    progress.line(f"Checking {len(tmdl_files) + len(bim_files) + len(pbit_files) + len(pbit_files) + len(pbix_files)} model file(s)...")
+    progress.line(
+        f"Checking {len(tmdl_files) + len(bim_files) + len(pbit_files) + len(pbit_files) + len(pbix_files)} model file(s)..."
+    )
     raw_texts: dict[str, str] = {}
     with progress.bar("Parsing", total=len(tmdl_files) + len(bim_files) + len(pbit_files)) as tick:
         catalogs = build_catalogs(tmdl_files, bim_files, pbit_files, texts_out=raw_texts, on_file=tick)
@@ -957,6 +971,76 @@ def check(
     has_error_diagnostic = any(d.severity == "error" for d in result.diagnostics)
     if strict and (result.findings or result.models_checked == 0 or has_error_diagnostic):
         sys.exit(2)
+
+
+@cli.command(name="diff")
+@click.argument("old_json", type=click.Path(exists=True))
+@click.argument("new_json", type=click.Path(exists=True))
+@click.option(
+    "--md",
+    "--markdown",
+    "md_path",
+    type=click.Path(),
+    default=None,
+    help="Also write a Markdown report to this path.",
+)
+@click.option(
+    "--html",
+    "html_path",
+    type=click.Path(),
+    default=None,
+    help="Also write a self-contained HTML report to this path.",
+)
+@click.option(
+    "--color/--no-color",
+    "color_flag",
+    default=None,
+    help="Colorize the text report (default: auto - only at an interactive terminal).",
+)
+def diff_cmd(
+    old_json: str, new_json: str, md_path: str | None, html_path: str | None, color_flag: bool | None
+) -> None:
+    """Compare two review JSON reports and show the delta (fixed / new / unchanged)."""
+    import json
+    from coop_review_core.cliutils import use_color, write_extra_report
+    from coop_review_core.delta import DeltaError, delta_markdown, diff_envelopes
+    from coop_dax_review.report import delta_html
+
+    try:
+        old_envelope = json.loads(Path(old_json).read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        raise click.UsageError(f"cannot read {old_json}: {exc}") from exc
+    except ValueError as exc:
+        raise click.UsageError(f"{old_json} is not valid JSON: {exc}") from exc
+
+    try:
+        new_envelope = json.loads(Path(new_json).read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        raise click.UsageError(f"cannot read {new_json}: {exc}") from exc
+    except ValueError as exc:
+        raise click.UsageError(f"{new_json} is not valid JSON: {exc}") from exc
+
+    if not isinstance(old_envelope, dict):
+        raise click.UsageError(f"{old_json} is not a review envelope (expected a JSON object)")
+    if not isinstance(new_envelope, dict):
+        raise click.UsageError(f"{new_json} is not a review envelope (expected a JSON object)")
+
+    try:
+        delta = diff_envelopes(old_envelope, new_envelope)
+    except DeltaError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    colorize = use_color(color_flag, None)
+    click.echo(delta_text(delta, color=colorize), nl=False)
+
+    if html_path:
+        # Re-parse version from envelope or fallback
+        version = str(new_envelope.get("version") or __version__)
+        html_str = delta_html(delta, version=version)
+        write_extra_report(html_path, html_str, "HTML")
+    if md_path:
+        md_str = delta_markdown(delta)
+        write_extra_report(md_path, md_str, "Markdown")
 
 
 @cli.command(name="rules")

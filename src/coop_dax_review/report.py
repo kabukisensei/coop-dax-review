@@ -37,6 +37,7 @@ from coop_review_core.report import to_sarif as _core_to_sarif
 
 from coop_dax_review.engine import Result
 from coop_dax_review.finding import SEVERITIES
+from coop_review_core.delta import EnvelopeDelta
 
 TOOL = "coop-dax-review"
 
@@ -343,6 +344,26 @@ def _finding_row(f) -> str:
     )
 
 
+def _finding_dict_row(f: dict) -> str:
+    """One finding dictionary as an HTML grid row (for EnvelopeDelta items)."""
+    sev = str(f.get("severity") or "info")
+    rule = str(f.get("rule_id") or "")
+    ref = str(f.get("standard_ref") or "")
+    file = str(f.get("file") or "")
+    line = f.get("line")
+    obj = str(f.get("object") or "")
+    msg = str(f.get("message") or "")
+    loc = f"{esc(file)}:{esc(line)}" if line else esc(file)
+    obj_span = f"{esc(obj)} &middot; " if obj else ""
+    return (
+        f'<div class="f {esc(sev)}" data-sev="{esc(sev)}" data-rule="{esc(rule)}">'
+        f"{chip(sev)}"
+        f'<div class="head"><span class="rule">{esc(rule)}</span> '
+        f"({esc(ref)}) &middot; {obj_span}{loc}</div>"
+        f'<div class="msg">{esc(msg)}</div></div>'
+    )
+
+
 # Tool-local additions on top of core's shared HTML_STYLE (still one inline
 # <style>, fully offline): the "Findings by rule" summary table (issue #15)
 # and the severity/rule filter bar (issue #17).
@@ -521,6 +542,50 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
 
     if filter_bar:
         parts.append(_FILTER_SCRIPT)
+    parts.append("</div></body></html>")
+    return "\n".join(parts) + "\n"
+
+
+def delta_html(delta: EnvelopeDelta, *, version: str) -> str:
+    """A self-contained, branded HTML delta report for run-to-run comparisons."""
+    logo = logo_data_uri()
+    logo_img = f'<img src="{logo}" alt="Cooptimize">' if logo else ""
+    parts: list[str] = [
+        "<!DOCTYPE html>",
+        '<html lang="en"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<title>Cooptimize DAX Review Delta</title>",
+        f"<style>{HTML_STYLE}{_EXTRA_STYLE}</style>",
+        '</head><body><div class="wrap">',
+        f'<header class="brand">{logo_img}<div>'
+        "<h1>DAX Review Delta</h1>"
+        '<div class="sub">coop-dax-review &middot; run-to-run progress report</div>'
+        "</div></header>",
+        '<div class="brandbar"></div>',
+        f'<div class="meta">version {esc(version)} &middot; {delta.new_count} new &middot; {delta.fixed_count} fixed &middot; {delta.persisting} unchanged</div>',
+    ]
+    if delta.standards_changed:
+        parts.append(
+            f'<div class="advisory">Standards changed ({esc(str(delta.old_standards_sha256)[:10])} &rarr; '
+            f'{esc(str(delta.new_standards_sha256)[:10])}) - findings may differ because the rules changed, not the code.</div>'
+        )
+
+    def _render_group(findings: list[dict], title: str) -> None:
+        if not findings:
+            return
+        parts.append(f"<h2>{esc(title)} ({len(findings)})</h2>")
+        by_model: dict[str, list[dict]] = {}
+        for f in findings:
+            by_model.setdefault(str(f.get("model") or ""), []).append(f)
+        for model in sorted(by_model):
+            rows = "".join(_finding_dict_row(f) for f in by_model[model])
+            parts.append(f'<div class="card"><div class="file">{esc(model)}</div>{rows}</div>')
+
+    _render_group(delta.new_findings, "New")
+    _render_group(delta.fixed_findings, "Fixed")
+    if not delta.new_findings and not delta.fixed_findings:
+        parts.append('<div class="empty">No changes found.</div>')
+
     parts.append("</div></body></html>")
     return "\n".join(parts) + "\n"
 

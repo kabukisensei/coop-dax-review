@@ -62,3 +62,23 @@ def test_diff_against_invalid_json_is_usage_error(tmp_path):
     r = CliRunner().invoke(cli, ["check", str(FIXTURES), "--diff-against", str(bad)])
     assert r.exit_code == 2
     assert "not valid JSON" in r.output
+
+
+def test_diff_command(tmp_path):
+    old = _json_report(tmp_path / "old.json")
+    new = _json_report(tmp_path / "new.json")
+
+    html_out = tmp_path / "delta.html"
+    md_out = tmp_path / "delta.md"
+
+    r = CliRunner().invoke(cli, ["diff", str(old), str(new), "--html", str(html_out), "--md", str(md_out)])
+    assert r.exit_code == 0
+    assert "0 new, 0 fixed," in r.output
+
+    assert html_out.exists()
+    html_content = html_out.read_text()
+    assert "DAX Review Delta" in html_content
+
+    assert md_out.exists()
+    md_content = md_out.read_text()
+    assert "run-to-run delta" in md_content
