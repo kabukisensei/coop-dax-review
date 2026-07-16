@@ -523,8 +523,8 @@ def test_registry_advertises_exactly_29_rules():
     # (added DAX-EARLIER-TO-VAR §22, DAX-DEAD-INACTIVE-RELATIONSHIP §23,
     # DAX-IFERROR-WRAPPING §24, DAX-MEASURE-DESCRIPTION §25).
     rules = all_rules()
-    assert len(rules) == 33
-    assert len({r.id for r in rules}) == 33  # ids unique
+    assert len(rules) == 35
+    assert len({r.id for r in rules}) == 35  # ids unique
 
 
 def test_every_dax_module_contributes_exactly_one_rule():

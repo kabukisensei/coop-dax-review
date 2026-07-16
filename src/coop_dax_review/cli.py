@@ -52,6 +52,7 @@ from coop_dax_review.parsers.bim import parse_bim_model
 from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 from coop_dax_review.parsers.tmdl import decode_tmdl, group_tmdl_files, parse_tmdl_model
 from coop_dax_review.parsers.vpax import apply_vpax_stats
+from coop_dax_review.parsers.pbir import parse_report_references
 from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import (
     console_lines,
@@ -770,6 +771,21 @@ def check(
     if resolved_vpax and catalogs:
         progress.line(f"Loading VPAX stats from {resolved_vpax.name}...")
         apply_vpax_stats(catalogs, resolved_vpax)
+        
+    # Apply PBIR report awareness (issue #33)
+    if catalogs:
+        progress.line("Scanning for PBIR report references...")
+        for catalog in catalogs:
+            model_dir = Path(catalog.file).parent
+            if model_dir.name.endswith(".SemanticModel"):
+                parent_dir = model_dir.parent
+                basename = model_dir.name[:-len(".SemanticModel")]
+                
+                exact_report = parent_dir / f"{basename}.Report"
+                if exact_report.is_dir():
+                    refs = parse_report_references(exact_report)
+                    catalog.report_refs.extend(refs)
+                    catalog.reports_scanned += 1
 
     result = run_rules(catalogs, rules)
     for pbix in pbix_files:

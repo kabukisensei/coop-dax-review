@@ -23,6 +23,14 @@ from typing import Optional
 from coop_dax_review.diagnostics import Diagnostic
 
 
+@dataclass
+class ReportReference:
+    """A field reference extracted from a PBIR report visual."""
+    field: str
+    visual_file: str
+    line: int = 0
+
+
 def normalize(name: str) -> str:
     """Lower-case an identifier and strip surrounding brackets/quotes.
 
@@ -130,6 +138,8 @@ class ModelCatalog:
     # like DAX-MEASURE-CATEGORY (§1) would misfire on item names (issue #8).
     calculation_items: list[CalculationItem] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
+    report_refs: list[ReportReference] = field(default_factory=list)
+    reports_scanned: int = 0
 
     # -- lookup indexes (normalized keys) ----------------------------------
 
