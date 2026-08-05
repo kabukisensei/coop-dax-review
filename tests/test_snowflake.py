@@ -29,15 +29,18 @@ def test_fires_on_snowflake_chain(make_catalog):
             ("DimCategory", ["CategoryId"]),
         ],
         relationships=[
-            dict(
-                from_table="FactSales", from_column="ProductId", to_table="DimProduct", to_column="ProductId"
-            ),
-            dict(
-                from_table="DimProduct",
-                from_column="CategoryId",
-                to_table="DimCategory",
-                to_column="CategoryId",
-            ),
+            {
+                "from_table": "FactSales",
+                "from_column": "ProductId",
+                "to_table": "DimProduct",
+                "to_column": "ProductId",
+            },
+            {
+                "from_table": "DimProduct",
+                "from_column": "CategoryId",
+                "to_table": "DimCategory",
+                "to_column": "CategoryId",
+            },
         ],
     )
     findings = _run(cat)
@@ -57,15 +60,18 @@ def test_silent_on_pure_star(make_catalog):
             ("DimCustomer", ["CustomerId"]),
         ],
         relationships=[
-            dict(
-                from_table="FactSales", from_column="ProductId", to_table="DimProduct", to_column="ProductId"
-            ),
-            dict(
-                from_table="FactSales",
-                from_column="CustomerId",
-                to_table="DimCustomer",
-                to_column="CustomerId",
-            ),
+            {
+                "from_table": "FactSales",
+                "from_column": "ProductId",
+                "to_table": "DimProduct",
+                "to_column": "ProductId",
+            },
+            {
+                "from_table": "FactSales",
+                "from_column": "CustomerId",
+                "to_table": "DimCustomer",
+                "to_column": "CustomerId",
+            },
         ],
     )
     assert _run(cat) == []
@@ -86,9 +92,9 @@ def test_multiple_intermediates_each_flagged(make_catalog):
             ("DimC", ["CKey"]),
         ],
         relationships=[
-            dict(from_table="FactSales", from_column="AKey", to_table="DimA", to_column="AKey"),
-            dict(from_table="DimA", from_column="BKey", to_table="DimB", to_column="BKey"),
-            dict(from_table="DimB", from_column="CKey", to_table="DimC", to_column="CKey"),
+            {"from_table": "FactSales", "from_column": "AKey", "to_table": "DimA", "to_column": "AKey"},
+            {"from_table": "DimA", "from_column": "BKey", "to_table": "DimB", "to_column": "BKey"},
+            {"from_table": "DimB", "from_column": "CKey", "to_table": "DimC", "to_column": "CKey"},
         ],
     )
     assert sorted(f.object for f in _run(cat)) == ["DimA", "DimB"]

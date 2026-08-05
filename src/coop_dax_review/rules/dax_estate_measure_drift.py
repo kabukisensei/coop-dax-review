@@ -1,6 +1,5 @@
 import re
 from collections import defaultdict
-from typing import List
 
 from coop_dax_review.finding import Finding
 from coop_dax_review.model import normalize
@@ -19,7 +18,7 @@ def _normalize_body(dax: str) -> str:
     return re.sub(r"\s+", "", masked)
 
 
-def check_estate(ctx: EstateContext) -> List[Finding]:
+def check_estate(ctx: EstateContext) -> list[Finding]:
     findings = []
 
     # group measures by normalize(name) -> dict[normalized_body, list[model_name]]
@@ -34,7 +33,7 @@ def check_estate(ctx: EstateContext) -> List[Finding]:
 
     for name, bodies in measure_groups.items():
         if len(bodies) > 1:
-            models_involved = set(m for sublist in bodies.values() for m in sublist)
+            models_involved = {m for sublist in bodies.values() for m in sublist}
             # e.g., 'ModelA <> ModelB'
             model_label = " <> ".join(sorted(models_involved))
 

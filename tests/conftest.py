@@ -8,9 +8,9 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-import pytest  # noqa: E402
+import pytest
 
-from coop_dax_review.model import Column, Measure, ModelCatalog, Relationship, Table  # noqa: E402
+from coop_dax_review.model import Column, Measure, ModelCatalog, Relationship, Table
 
 
 @pytest.fixture

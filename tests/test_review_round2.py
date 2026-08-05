@@ -193,16 +193,16 @@ def test_marked_date_table_ignores_time_intel_in_calc_column_comment():
 
 
 def _finding(**overrides) -> Finding:
-    base = dict(
-        rule_id="DAX-USE-DIVIDE",
-        severity="warning",
-        model="Sales",
-        file="proj/Sales.SemanticModel/definition/tables/T.tmdl",
-        line=5,
-        object="[M: Ratio]",
-        message="use DIVIDE",
-        standard_ref="§14",
-    )
+    base = {
+        "rule_id": "DAX-USE-DIVIDE",
+        "severity": "warning",
+        "model": "Sales",
+        "file": "proj/Sales.SemanticModel/definition/tables/T.tmdl",
+        "line": 5,
+        "object": "[M: Ratio]",
+        "message": "use DIVIDE",
+        "standard_ref": "§14",
+    }
     base.update(overrides)
     return Finding(**base)
 

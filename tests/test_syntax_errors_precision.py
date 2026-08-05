@@ -21,7 +21,7 @@ from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
 _STANDARDS = Path(__file__).resolve().parent.parent / "docs" / "standards.md"
 
-_DAX_BLOCK_RE = re.compile(r"^```dax\n(.*?)^```", re.M | re.S)
+_DAX_BLOCK_RE = re.compile(r"^```dax\n(.*?)^```", re.MULTILINE | re.DOTALL)
 # A measure header: `Name = ...` (or bare `Name =`) at column 0, where Name is a
 # display name (letters/digits/spaces/`:`/`%`). Comment / VAR / RETURN lines are
 # NOT headers — they belong to the current measure's body.
@@ -57,7 +57,7 @@ def _measures_from_standards() -> list[tuple[str, str]]:
 
 
 def test_precision_guard_all_fixtures():
-    tmdl, bim, pbit, pbix = discover_inputs((str(_FIXTURES),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(_FIXTURES),))
     assert tmdl or bim, "fixtures must contain at least one model to be a meaningful guard"
     catalogs = build_catalogs(tmdl, bim)
     diags = validate_dax_syntax(catalogs)

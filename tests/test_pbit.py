@@ -1,5 +1,6 @@
-import zipfile
 import json
+import zipfile
+
 from click.testing import CliRunner
 
 from coop_dax_review.cli import cli

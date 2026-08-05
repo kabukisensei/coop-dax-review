@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from coop_dax_review.finding import AgentReviewItem, Finding
 from coop_dax_review.model import ModelCatalog
@@ -31,9 +31,9 @@ class Rule:
     kind: str = "deterministic"  # "deterministic" | "agent" | "estate"
     default_enabled: bool = True  # off-by-default rules must be turned on in rules.yml
     params: dict[str, Any] = field(default_factory=dict)  # tunables from rules.yml (e.g. thresholds)
-    check: Optional[Callable[["RuleContext"], list[Finding]]] = None
-    detect: Optional[Callable[["RuleContext"], list[AgentReviewItem]]] = None
-    check_estate: Optional[Callable[["EstateContext"], list[Finding]]] = None
+    check: Callable[[RuleContext], list[Finding]] | None = None
+    detect: Callable[[RuleContext], list[AgentReviewItem]] | None = None
+    check_estate: Callable[[EstateContext], list[Finding]] | None = None
 
 
 class RuleContext:

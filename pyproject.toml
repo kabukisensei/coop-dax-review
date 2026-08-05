@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.5"]
+dev = ["pytest>=8.0", "ruff>=0.16.1,<0.17"]
 
 [project.scripts]
 coop-dax-review = "coop_dax_review.cli:main"

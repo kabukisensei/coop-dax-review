@@ -1,5 +1,6 @@
-import zipfile
 import json
+import zipfile
+
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import build_catalog_from_dict
 

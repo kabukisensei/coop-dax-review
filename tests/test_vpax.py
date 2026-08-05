@@ -2,8 +2,8 @@ import json
 import zipfile
 from pathlib import Path
 
-from coop_dax_review.model import ModelCatalog, Table, Column
-from coop_dax_review.parsers.vpax import load_vpax, apply_vpax_stats
+from coop_dax_review.model import Column, ModelCatalog, Table
+from coop_dax_review.parsers.vpax import apply_vpax_stats, load_vpax
 
 
 def _create_synthetic_vpax(path: Path):

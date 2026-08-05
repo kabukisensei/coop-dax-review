@@ -156,7 +156,7 @@ _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _CALL_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
 _VAR_RE = re.compile(r"\bVAR\b", re.IGNORECASE)
 _RETURN_RE = re.compile(r"\bRETURN\b", re.IGNORECASE)
-_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _BRACKET_CONTENT_RE = re.compile(r"\[[^\[\]]*\]")
 # A string literal, a block comment, or a line comment — whichever starts
 # first (single left-to-right pass over ALL three token kinds, mirroring
@@ -166,7 +166,7 @@ _BRACKET_CONTENT_RE = re.compile(r"\[[^\[\]]*\]")
 # even though line comments pass through untouched: consuming a ``//`` / ``--``
 # run as a unit stops an unpaired ``"`` inside it (an inch mark like ``5/8"``)
 # from starting a phantom string that would swallow a following real header.
-_STRING_OR_COMMENT_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/|(?://|--)[^\n]*', re.S)
+_STRING_OR_COMMENT_RE = re.compile(r'"(?:[^"]|"")*"|/\*.*?\*/|(?://|--)[^\n]*', re.DOTALL)
 
 
 def _blank_string_literals(dax: str) -> str:
@@ -184,7 +184,7 @@ def _blank_string_literals(dax: str) -> str:
     return _STRING_OR_COMMENT_RE.sub(repl, dax)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def blank_brackets(text: str) -> str:
     """Blank ``[...]`` reference contents (length-preserving) so an identifier
     named ``[VAR]`` / ``[Net/Gross]`` can't masquerade as a keyword or operator.
@@ -201,7 +201,7 @@ def blank_brackets(text: str) -> str:
 _QUOTED_IDENT_RE = re.compile(r"'(?:[^'\n]|'')*'")
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def blank_quoted_identifiers(text: str) -> str:
     """Blank single-quoted table-identifier contents (length-preserving) so a
     ``/`` or ``(`` inside a table name like ``'Plan/Actuals'`` or
@@ -210,7 +210,7 @@ def blank_quoted_identifiers(text: str) -> str:
     return _QUOTED_IDENT_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def blank_identifiers(masked_dax: str) -> str:
     """Blank both identifier forms — ``[...]`` refs, then single-quoted table
     names — before scanning for operators, keywords or parens. Bracket contents

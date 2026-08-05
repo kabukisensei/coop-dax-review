@@ -74,13 +74,13 @@ def test_earlier_in_comment_or_identifier_silent(make_catalog):
 # -- DAX-DEAD-INACTIVE-RELATIONSHIP (§23) ---------------------------------------
 
 
-_REL = dict(
-    from_table="FactSales",
-    from_column="ShipDate",
-    to_table="DimDate",
-    to_column="Date",
-    is_active=False,
-)
+_REL = {
+    "from_table": "FactSales",
+    "from_column": "ShipDate",
+    "to_table": "DimDate",
+    "to_column": "Date",
+    "is_active": False,
+}
 
 
 def test_unused_inactive_relationship_fires(make_catalog):

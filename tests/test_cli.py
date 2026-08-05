@@ -100,11 +100,11 @@ def test_json_includes_models_checked():
 def test_build_catalogs_collects_raw_texts():
     from coop_dax_review.cli import build_catalogs, discover_inputs
 
-    tmdl, bim, pbit, pbix = discover_inputs((str(FIXTURES),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(FIXTURES),))
     texts: dict = {}
     build_catalogs(tmdl, bim, texts_out=texts)
     assert texts  # raw text captured so inline directives can be scanned
-    assert any(k.endswith(".tmdl") or k.endswith(".bim") for k in texts)
+    assert any(k.endswith((".tmdl", ".bim")) for k in texts)
 
 
 def test_baseline_write_then_suppresses(tmp_path):
@@ -451,8 +451,8 @@ def test_stale_ignore_entry_warns(tmp_path):
 
 
 def test_save_ignores_full_loop_then_silenced(tmp_path, monkeypatch):
-    from coop_dax_review.standards import RuleConfig
     from coop_dax_review import cli as climod
+    from coop_dax_review.standards import RuleConfig
 
     findings = _all_findings()
     # Prove the round-trip specifically for a measure whose name uses the DAX

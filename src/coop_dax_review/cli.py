@@ -20,7 +20,6 @@ import sys
 from pathlib import Path
 
 import click
-
 from coop_review_core.cliutils import (
     apply_syntax_error_policy,
     config_write_path,
@@ -49,10 +48,10 @@ from coop_dax_review.engine import run_rules
 from coop_dax_review.finding import SEVERITIES
 from coop_dax_review.model import ModelCatalog
 from coop_dax_review.parsers.bim import parse_bim_model
+from coop_dax_review.parsers.pbir import parse_report_references
 from coop_dax_review.parsers.syntax_validation import validate_dax_syntax
 from coop_dax_review.parsers.tmdl import decode_tmdl, group_tmdl_files, parse_tmdl_model
 from coop_dax_review.parsers.vpax import apply_vpax_stats
-from coop_dax_review.parsers.pbir import parse_report_references
 from coop_dax_review.progress import Progress, should_enable
 from coop_dax_review.report import (
     console_lines,
@@ -64,14 +63,6 @@ from coop_dax_review.report import (
     to_sarif,
 )
 from coop_dax_review.rules import all_rules, rule_docs
-from coop_dax_review.suppressions import (
-    TOOL,
-    BaselineError,
-    is_inline_suppressed,
-    load_baseline,
-    scan_directives,
-    write_baseline,
-)
 from coop_dax_review.standards import (
     RuleConfig,
     StandardsError,
@@ -84,6 +75,14 @@ from coop_dax_review.standards import (
     resolve_standards_path,
     section_text,
     standards_info,
+)
+from coop_dax_review.suppressions import (
+    TOOL,
+    BaselineError,
+    is_inline_suppressed,
+    load_baseline,
+    scan_directives,
+    write_baseline,
 )
 
 _SEVERITY_CHOICE = click.Choice(SEVERITIES)
@@ -149,7 +148,7 @@ def discover_inputs(paths: tuple[str, ...]) -> tuple[list[Path], list[Path], lis
 def build_catalogs(
     tmdl_files: list[Path],
     bim_files: list[Path],
-    pbit_files: list[Path] = None,
+    pbit_files: list[Path] | None = None,
     texts_out: dict[str, str] | None = None,
     on_file=None,
 ) -> list[ModelCatalog]:
@@ -197,7 +196,7 @@ def build_catalogs(
         files = groups[key]
         try:
             catalogs.append(parse_tmdl_model(model_name, files))
-        except Exception as exc:  # malformed TMDL / unexpected shape — degrade, never crash
+        except Exception as exc:  # malformed TMDL / unexpected shape — degrade, never crash  # noqa: BLE001
             disp = next(iter(files), model_name)
             cat = ModelCatalog(name=model_name, file=disp)
             cat.diagnostics.append(
@@ -250,7 +249,7 @@ def build_catalogs(
             texts_out[disp] = text
         try:
             catalogs.append(parse_bim_model(disp, text))
-        except Exception as exc:  # malformed JSON / unexpected shape
+        except Exception as exc:  # malformed JSON / unexpected shape  # noqa: BLE001
             cat = ModelCatalog(name=Path(disp).stem, file=disp)
             cat.diagnostics.append(
                 Diagnostic(
@@ -272,7 +271,7 @@ def build_catalogs(
             from coop_dax_review.parsers.pbit import parse_pbit_model
 
             catalogs.append(parse_pbit_model(disp))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - malformed .pbit / unexpected shape; degrade, never crash
             cat = ModelCatalog(name=Path(disp).stem, file=disp)
             cat.diagnostics.append(
                 Diagnostic(
@@ -948,7 +947,7 @@ def check(
 
             try:
                 webbrowser.open(resolved.as_uri())
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - opening the report is a convenience
                 pass  # opening is a convenience; never fail the run over it
     elif output_path:
         try:
@@ -1050,8 +1049,10 @@ def diff_cmd(
 ) -> None:
     """Compare two review JSON reports and show the delta (fixed / new / unchanged)."""
     import json
+
     from coop_review_core.cliutils import use_color, write_extra_report
     from coop_review_core.delta import DeltaError, delta_markdown, diff_envelopes
+
     from coop_dax_review.report import delta_html
 
     try:

@@ -231,7 +231,7 @@ _VERBATIM_FENCE = "```"
 def _is_verbatim_open(inline: str) -> bool:
     """Whether an inline expression is the OPENING of a TMDL verbatim block.
 
-    TMDL's serializer emits ``measure X = `​`​``` (three backticks right
+    TMDL's serializer emits ``measure X = `\u200b`\u200b``` (three backticks right
     after ``=``, nothing else on the line) whenever the expression has trailing
     whitespace or blank lines with whitespace; the body then follows verbatim.
     Only a bare fence opens a block — a real expression may legitimately contain
@@ -244,7 +244,7 @@ def _is_verbatim_open(inline: str) -> bool:
 def _consume_verbatim(lines: list[str], decl_index: int) -> tuple[str, int, int]:
     """Read a TMDL verbatim (triple-backtick) block.
 
-    ``decl_index`` is the file index of the ``... = `​`​``` declaration
+    ``decl_index`` is the file index of the ``... = `\u200b`\u200b``` declaration
     line (whose inline part is the opening fence). Body lines are taken
     **verbatim** — indentation is ignored and property/child-object break rules
     do NOT apply, per the spec's "read verbatim including indentation" — until
@@ -841,7 +841,7 @@ def parse_tmdl_model(name: str, files: dict[str, str]) -> ModelCatalog:
                 continue
             i += 1
     if not catalog.file:
-        catalog.file = sorted(files)[0] if files else f"{name}.SemanticModel"
+        catalog.file = min(files) if files else f"{name}.SemanticModel"
     return catalog
 
 
@@ -867,7 +867,7 @@ def decode_tmdl(raw: bytes) -> str:
     non-TMDL garbage into an empty-looking catalog, reintroducing the very
     silent-clean bug; a real UTF-16 export carries a BOM (handled above).
     """
-    if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
+    if raw.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
         return raw.decode("utf-16")
     if b"\x00" in raw:
         raise UnicodeDecodeError("utf-8", raw, 0, 1, "NUL byte - not valid UTF-8 (UTF-16 without a BOM?)")

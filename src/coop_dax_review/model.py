@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Optional
 
 from coop_dax_review.diagnostics import Diagnostic
 
@@ -194,7 +193,7 @@ class ModelCatalog:
         return max(sorted(set(modes)), key=modes.count)
 
     @property
-    def date_table(self) -> Optional[str]:
+    def date_table(self) -> str | None:
         """Display name of the marked Date table, or None if none is marked."""
         for table in self.tables:
             if table.is_date_table:

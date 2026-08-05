@@ -60,15 +60,11 @@ def test_family_identity_construction():
     # fingerprint = sha1("rule \x1f model \x1f object-or-basename \x1f key-or-message \x1f ordinal")[:12].
     # Pinned byte-for-byte so the two tools can never drift apart silently again.
     f = Finding("DAX-A", "warning", "Sales", "dir/f.tmdl", 10, "[M]", "msg", "§1", occurrence=2)
-    expected = hashlib.sha1("\x1f".join(["DAX-A", "Sales", "[M]", "msg", "2"]).encode("utf-8")).hexdigest()[
-        :12
-    ]
+    expected = hashlib.sha1(b"DAX-A\x1fSales\x1f[M]\x1fmsg\x1f2").hexdigest()[:12]
     assert f.fingerprint() == expected
     # Empty object -> the file BASENAME stands in; fingerprint_key overrides the message.
     g = Finding("DAX-A", "warning", "Sales", "dir/f.tmdl", 10, "", "msg 27", "§1", fingerprint_key="stable")
-    expected = hashlib.sha1(
-        "\x1f".join(["DAX-A", "Sales", "f.tmdl", "stable", "0"]).encode("utf-8")
-    ).hexdigest()[:12]
+    expected = hashlib.sha1(b"DAX-A\x1fSales\x1ff.tmdl\x1fstable\x1f0").hexdigest()[:12]
     assert g.fingerprint() == expected
 
 
@@ -305,7 +301,5 @@ def test_assign_occurrences_is_stable_and_group_scoped():
 def test_agent_item_family_identity_construction():
     # AgentReviewItem mirrors Finding exactly (note stands in for message).
     item = AgentReviewItem("DAX-X", "Sales", "dir/m.tmdl", "", 5, "note", "§5", occurrence=1)
-    expected = hashlib.sha1(
-        "\x1f".join(["DAX-X", "Sales", "m.tmdl", "note", "1"]).encode("utf-8")
-    ).hexdigest()[:12]
+    expected = hashlib.sha1(b"DAX-X\x1fSales\x1fm.tmdl\x1fnote\x1f1").hexdigest()[:12]
     assert item.fingerprint() == expected

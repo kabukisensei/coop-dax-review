@@ -12,7 +12,7 @@ def _run(cat):
 
 
 def _rel(ft, fc, tt, tc):
-    return dict(from_table=ft, from_column=fc, to_table=tt, to_column=tc)
+    return {"from_table": ft, "from_column": fc, "to_table": tt, "to_column": tc}
 
 
 def test_snowflake_intermediate_flagged(make_catalog):

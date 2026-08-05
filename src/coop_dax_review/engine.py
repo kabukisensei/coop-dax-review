@@ -42,7 +42,7 @@ class Result:
                 counts[diag.severity] += 1
         return counts
 
-    def filtered(self, min_severity: str) -> "Result":
+    def filtered(self, min_severity: str) -> Result:
         """A copy keeping only findings at or above ``min_severity``.
 
         Diagnostics are always kept in full — a processing error/gap is worth
@@ -70,7 +70,7 @@ def run_rules(catalogs: list[ModelCatalog], rules: list[Rule]) -> Result:
                         result.agent_review.extend(rule.detect(ctx))
                 elif rule.check is not None:
                     result.findings.extend(rule.check(ctx))
-            except Exception as exc:  # advisory: isolate a buggy rule, but surface it
+            except Exception as exc:  # advisory: isolate a buggy rule, but surface it  # noqa: BLE001
                 result.diagnostics.append(
                     Diagnostic(
                         severity="error",
@@ -88,7 +88,7 @@ def run_rules(catalogs: list[ModelCatalog], rules: list[Rule]) -> Result:
                 ctx = EstateContext(rule, catalogs)
                 try:
                     result.findings.extend(rule.check_estate(ctx))
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - isolate a buggy estate rule the same way
                     result.diagnostics.append(
                         Diagnostic(
                             severity="error",

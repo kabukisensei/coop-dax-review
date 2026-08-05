@@ -103,7 +103,7 @@ def test_same_named_models_in_different_folders_stay_distinct(tmp_path):
             tmp_path / env / "Sales.SemanticModel" / "definition" / "tables" / "T.tmdl",
             f"table {table}\n\tcolumn A\n\t\tdataType: double\n",
         )
-    tmdl, bim, pbit, pbix = discover_inputs((str(tmp_path),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(tmp_path),))
     catalogs = build_catalogs(tmdl, bim)
     assert len(catalogs) == 2  # NOT merged into one chimera model
     assert [c.name for c in catalogs] == ["Sales", "Sales"]  # display name kept
@@ -122,7 +122,7 @@ def test_flat_folder_of_tmdl_files_forms_one_model(tmp_path):
         d / "relationships.tmdl",
         "relationship r1\n\tfromColumn: FactSales.ProductId\n\ttoColumn: DimProduct.ProductId\n",
     )
-    tmdl, bim, pbit, pbix = discover_inputs((str(d),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(d),))
     catalogs = build_catalogs(tmdl, bim)
     assert len(catalogs) == 1  # one model, not one per file
     cat = catalogs[0]
@@ -413,7 +413,7 @@ def test_overlapping_roots_check_each_file_once(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    tmdl, bims, pbit, pbix = discover_inputs((".", str(tmp_path)))
+    _tmdl, bims, _pbit, _pbix = discover_inputs((".", str(tmp_path)))
     assert len(bims) == 1  # deduped by resolved path (mirrors coop-sql-review aecbe61)
     payload = _check_json(".", str(tmp_path))
     assert payload["models_checked"] == 1
@@ -427,7 +427,7 @@ def test_overlapping_roots_dedupe_tmdl_too(tmp_path, monkeypatch):
         "table T\n\tcolumn A\n\t\tdataType: double\n",
     )
     monkeypatch.chdir(tmp_path)
-    tmdl, bims, pbit, pbix = discover_inputs((".", str(tmp_path)))
+    tmdl, _bims, _pbit, _pbix = discover_inputs((".", str(tmp_path)))
     assert len(tmdl) == 1
 
 
@@ -437,7 +437,7 @@ def test_overlapping_roots_dedupe_tmdl_too(tmp_path, monkeypatch):
 def test_explicit_non_model_file_is_not_parsed_as_bim(tmp_path):
     notes = tmp_path / "notes.txt"
     notes.write_text("hello\n", encoding="utf-8")
-    tmdl, bim, pbit, pbix = discover_inputs((str(notes),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(notes),))
     assert (tmdl, bim) == ([], [])  # neither bucket
     result = CliRunner().invoke(cli, ["check", str(notes), "--format", "json"])
     assert result.exit_code == 0
@@ -448,7 +448,7 @@ def test_explicit_non_model_file_is_not_parsed_as_bim(tmp_path):
 
 
 def test_explicit_bim_and_tmdl_files_still_accepted():
-    tmdl, bim, pbit, pbix = discover_inputs((str(FIXTURES / "legacy.bim"),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(FIXTURES / "legacy.bim"),))
     assert [p.name for p in bim] == ["legacy.bim"] and tmdl == []
 
 
@@ -578,7 +578,7 @@ def test_update_alias_supports_check_too(monkeypatch):
 
 
 def test_build_catalogs_ticks_once_per_model_file():
-    tmdl, bim, pbit, pbix = discover_inputs((str(FIXTURES),))
+    tmdl, bim, _pbit, _pbix = discover_inputs((str(FIXTURES),))
     ticks: list = []
     build_catalogs(tmdl, bim, on_file=lambda *a: ticks.append(a))
     assert len(ticks) == len(tmdl) + len(bim)

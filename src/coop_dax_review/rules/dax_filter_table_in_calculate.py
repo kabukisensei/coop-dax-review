@@ -58,9 +58,7 @@ def _simple_table_predicate(predicate: str, table: str, ctx: RuleContext) -> boo
     # BOTH sides of the operator, e.g. T[SalePrice] < T[ListPrice]) has no plain
     # boolean-column-filter equivalent, so that FILTER is legitimate — skip it.
     op = ops[0]
-    if bracket_refs(predicate[: op.start()]) and bracket_refs(predicate[op.end() :]):
-        return False
-    return True
+    return not (bracket_refs(predicate[: op.start()]) and bracket_refs(predicate[op.end() :]))
 
 
 def check(ctx: RuleContext) -> list[Finding]:

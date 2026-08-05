@@ -39,7 +39,7 @@ from dataclasses import dataclass
 # unterminated run. (The block-comment alt `\*(?!/)` steps over a lone `*` so a
 # `*/` still closes the shortest comment; the trailing `(?:\*/)?` catches the
 # unterminated case.)
-_MASK_RE = re.compile(r'"(?:[^"]|"")*"?|/\*(?:[^*]|\*(?!/))*(?:\*/)?|(?://|--)[^\n]*', re.S)
+_MASK_RE = re.compile(r'"(?:[^"]|"")*"?|/\*(?:[^*]|\*(?!/))*(?:\*/)?|(?://|--)[^\n]*', re.DOTALL)
 _BRACKET_RE = re.compile(r"\[([^\[\]]+)\]")
 # A single-quoted table identifier, tolerating the `''` escape for a literal
 # apostrophe (`'O''Brien'`). Its content is NOT blanked by mask_dax (only strings
@@ -95,7 +95,7 @@ def _blank_runs(text: str, pattern: re.Pattern) -> str:
     return pattern.sub(repl, text)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def mask_dax(dax: str) -> str:
     """A copy of ``dax`` with comment and string-literal *content* blanked to
     spaces but every offset and newline preserved. Scan this, not the raw DAX.

@@ -186,6 +186,7 @@ def test_keepfilters_per_calculate_not_suppressed_by_a_sibling(make_catalog):
 
 def _run_estate(rule_module, catalogs):
     from importlib import import_module
+
     from coop_dax_review.rules.base import EstateContext
 
     mod = import_module(rule_module)

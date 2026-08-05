@@ -17,6 +17,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+from coop_review_core.delta import EnvelopeDelta
 from coop_review_core.report import (
     BADGE,
     BADGE_COLOR,
@@ -37,7 +38,6 @@ from coop_review_core.report import to_sarif as _core_to_sarif
 
 from coop_dax_review.engine import Result
 from coop_dax_review.finding import SEVERITIES
-from coop_review_core.delta import EnvelopeDelta
 
 TOOL = "coop-dax-review"
 
@@ -487,14 +487,18 @@ def to_html(result: Result, *, version: str, standards: dict[str, str]) -> str:
         "<title>Cooptimize DAX Review</title>",
         f"<style>{HTML_STYLE}{_EXTRA_STYLE}</style>",
         '</head><body><div class="wrap">',
-        f'<header class="brand">{logo_img}<div>'
-        "<h1>DAX Review</h1>"
-        '<div class="sub">coop-dax-review &middot; Power BI model standards report</div>'
-        "</div></header>",
+        (
+            f'<header class="brand">{logo_img}<div>'
+            "<h1>DAX Review</h1>"
+            '<div class="sub">coop-dax-review &middot; Power BI model standards report</div>'
+            "</div></header>"
+        ),
         '<div class="brandbar"></div>',
-        f'<div class="meta">version {esc(version)} &middot; standards '
-        f"<code>{esc(standards.get('path', ''))}</code> &middot; "
-        f"{result.models_checked} model(s) checked</div>",
+        (
+            f'<div class="meta">version {esc(version)} &middot; standards '
+            f"<code>{esc(standards.get('path', ''))}</code> &middot; "
+            f"{result.models_checked} model(s) checked</div>"
+        ),
         '<div class="pills">'
         + "".join(f'<span class="pill {s}">{summary[s]} {s}</span>' for s in SEVERITIES if summary[s])
         + (
@@ -557,10 +561,12 @@ def delta_html(delta: EnvelopeDelta, *, version: str) -> str:
         "<title>Cooptimize DAX Review Delta</title>",
         f"<style>{HTML_STYLE}{_EXTRA_STYLE}</style>",
         '</head><body><div class="wrap">',
-        f'<header class="brand">{logo_img}<div>'
-        "<h1>DAX Review Delta</h1>"
-        '<div class="sub">coop-dax-review &middot; run-to-run progress report</div>'
-        "</div></header>",
+        (
+            f'<header class="brand">{logo_img}<div>'
+            "<h1>DAX Review Delta</h1>"
+            '<div class="sub">coop-dax-review &middot; run-to-run progress report</div>'
+            "</div></header>"
+        ),
         '<div class="brandbar"></div>',
         f'<div class="meta">version {esc(version)} &middot; {delta.new_count} new &middot; {delta.fixed_count} fixed &middot; {delta.persisting} unchanged</div>',
     ]

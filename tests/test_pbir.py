@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
 
-from coop_dax_review.model import ModelCatalog, Table, Column, Measure
+from coop_dax_review.model import Column, Measure, ModelCatalog, Table
 from coop_dax_review.parsers.pbir import parse_report_references
+from coop_dax_review.rules.base import Rule, RuleContext
 from coop_dax_review.rules.dax_broken_field_ref import check as check_broken
 from coop_dax_review.rules.dax_unused_measure import detect as detect_unused
-from coop_dax_review.rules.base import RuleContext, Rule
 
 
 def _create_mock_report(path: Path):

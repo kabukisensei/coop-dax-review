@@ -13,12 +13,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      # Pinned: ruff 0.16 widened its default rule set and flags ~93 issues across
-      # the pre-existing tree (RUF059 unused-noqa, BLE001 broad-except, E402
-      # import-position, UP045 Optional->| ...). A deliberate ruff-0.16 compliance
-      # pass is a separate reviewed task; until then pin to the version the tree is
-      # formatted for. Bump together with that format pass.
-      - run: pip install "ruff==0.15.21"
+      # Pin ruff: a new minor can expand the default rule set and break the gate.
+      # Bump together with a deliberate compliance pass (adopt the new defaults, fix the tree).
+      - run: pip install "ruff==0.16.1"
       - run: ruff check src tests
       - run: ruff format --check src tests
 

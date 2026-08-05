@@ -1,12 +1,11 @@
 from collections import defaultdict
-from typing import List
 
 from coop_dax_review.finding import Finding
 from coop_dax_review.model import normalize
 from coop_dax_review.rules.base import EstateContext, Rule
 
 
-def check_estate(ctx: EstateContext) -> List[Finding]:
+def check_estate(ctx: EstateContext) -> list[Finding]:
     findings = []
 
     # group measures by normalize(name) -> dict[format_string, list[model_name]]
@@ -20,7 +19,7 @@ def check_estate(ctx: EstateContext) -> List[Finding]:
 
     for name, formats in measure_groups.items():
         if len(formats) > 1:
-            models_involved = set(m for sublist in formats.values() for m in sublist)
+            models_involved = {m for sublist in formats.values() for m in sublist}
             model_label = " <> ".join(sorted(models_involved))
 
             # describe the formats

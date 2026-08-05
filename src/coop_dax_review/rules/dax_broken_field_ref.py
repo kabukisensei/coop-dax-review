@@ -45,9 +45,7 @@ def check(ctx: RuleContext) -> list[Finding]:
 
         # Is it broken?
         is_broken = False
-        if n_entity not in valid_tables:
-            is_broken = True
-        elif n_prop not in valid_columns and n_prop not in valid_measures:
+        if n_entity not in valid_tables or n_prop not in valid_columns and n_prop not in valid_measures:
             is_broken = True
 
         if is_broken:
