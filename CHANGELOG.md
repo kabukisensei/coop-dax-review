@@ -5,8 +5,19 @@ All notable changes to **coop-dax-review** are documented here. The format follo
 The JSON output is a machine contract (`schema_version`); breaking changes to its shape bump that
 field and are called out here.
 
-## [Unreleased]
+## [0.22.0] - 2026-08-05
 ### Added
+- **Hybrid DAX Coding Standard** — `docs/standards.md` gained a core-philosophy preamble
+  (variable-first default, intentional `CALCULATE`, banned anti-patterns) and §27–§32:
+  leading-underscore VAR names, table variables + explicit iterators for routine local
+  filters, no gratuitous `CALCULATE`, the three allowed `CALCULATE` uses, no magic
+  numbers, no implicit context transition. §4 gained a hybrid nuance note; examples
+  throughout now use the `_` prefix.
+- **`DAX-VAR-UNDERSCORE` (§27, warning)** — flags `VAR <name>` declarations without a
+  leading underscore across measures, calculated columns/tables, and calculation items.
+- **`DAX-NO-GRATUITOUS-CALCULATE` (§29, warning)** — flags single-argument
+  `CALCULATE`/`CALCULATETABLE` in measures; row-context occurrences (§30 case 3 context
+  transition) are excluded and nested single-argument chains fire once.
 - **`explain <RULE-ID>`** — print a rule's rationale (its module docstring), the cited
   standards section excerpt (`§N` sliced from the bundled `docs/standards.md`), and its
   metadata (severity, tier, default-enabled, params). Case-insensitive, with a did-you-mean
