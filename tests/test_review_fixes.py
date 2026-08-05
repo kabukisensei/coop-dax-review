@@ -519,12 +519,11 @@ def test_var_keyword_inside_quoted_table_name_is_not_var_return(make_catalog):
 
 
 def test_registry_advertises_exactly_29_rules():
-    # Bump this pin in the same commit that adds/removes a rule. 29 as of issue #19
-    # (added DAX-EARLIER-TO-VAR §22, DAX-DEAD-INACTIVE-RELATIONSHIP §23,
-    # DAX-IFERROR-WRAPPING §24, DAX-MEASURE-DESCRIPTION §25).
+    # Bump this pin in the same commit that adds/removes a rule. 37 as of the hybrid
+    # standards rules (added DAX-VAR-UNDERSCORE §27, DAX-NO-GRATUITOUS-CALCULATE §29).
     rules = all_rules()
-    assert len(rules) == 35
-    assert len({r.id for r in rules}) == 35  # ids unique
+    assert len(rules) == 37
+    assert len({r.id for r in rules}) == 37  # ids unique
 
 
 def test_every_dax_module_contributes_exactly_one_rule():

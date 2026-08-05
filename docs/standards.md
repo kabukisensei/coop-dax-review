@@ -1,5 +1,39 @@
 # DAX Standards
 
+## Core Philosophy: The Hybrid Standard
+
+These standards follow a **hybrid DAX methodology**: the readable, step-debuggable,
+variable-first approach from Greg Deckler's *DAX for Humans* (VAR-first structure,
+isolated table variables, explicit iterators), combined with pragmatic, intentional
+use of `CALCULATE()` reserved for the cases where filter or relationship manipulation
+actually requires it.
+
+The default mental model, in order:
+
+1. **Build intermediate results as variables** (§2, §27). Every non-trivial measure is a
+   sequence of named steps you can inspect, return individually, and debug.
+2. **Filter with table variables and iterate explicitly** (§28). Routine local filters
+   build a `VAR _FilteredTable = FILTER(...)` and aggregate over it with `SUMX`,
+   `COUNTX`, or `AVERAGEX`. No `CALCULATE` required.
+3. **Reach for `CALCULATE` only with intent** (§30). It is allowed for exactly three
+   jobs: global filter-state overrides, relationship/security overrides, and deliberate
+   context transition.
+
+### Directive keywords
+
+- **MUST** / **MUST NOT**: enforced, non-negotiable rules.
+- **PREFER**: the default choice; deviate only with a stated reason in a comment.
+- **ALLOW**: a permitted exception under the stated conditions.
+
+### Tier map
+
+| Tier | Principle | Sections |
+|------|-----------|----------|
+| 1. Variable-first architecture (default) | VAR-first, table variables, explicit iterators, no gratuitous `CALCULATE` | §2, §27, §28, §29 |
+| 2. Intentional `CALCULATE` (allowed exceptions) | Filter-state overrides, relationship/security overrides, deliberate context transition | §30 (supported by §4, §5, §7, §8, §23) |
+| 3. Banned anti-patterns | Implicit context transition, magic numbers, nested `CALCULATE`, auto date/time, `EARLIER`, `IFERROR` wrapping | §3, §21, §22, §24, §31, §32 |
+| Model hygiene (supporting) | Naming, schema shape, format strings, keys, folders | §1, §6, §14–§20, §25 |
+
 ## 1. Naming Conventions
 
 | Type | Pattern | Example |
@@ -15,14 +49,14 @@
 
 ```dax
 -- Good: Column prefixed, measure not prefixed
-VAR CustomerRevenue =
+VAR _CustomerRevenue =
     CALCULATE(
         [Sales: Total Revenue],
         DimCustomer[CustomerId] = 123
     )
 
 -- Bad: Measure prefixed with table, column not prefixed
-VAR CustomerRevenue =
+VAR _CustomerRevenue =
     CALCULATE(
         FactSales[Sales: Total Revenue],  -- Wrong: measures don't get table prefix
         [CustomerId] = 123                -- Wrong: columns need table prefix
@@ -36,19 +70,19 @@ Always use `VAR`/`RETURN` for readability and to avoid repeated logic.
 ```dax
 -- Good: VAR/RETURN with clear variable names
 Sales: Total Revenue =
-VAR SelectedPeriod =
+VAR _SelectedPeriod =
     DATESBETWEEN(
         DimDate[Date],
         MIN(DimDate[Date]),
         MAX(DimDate[Date])
     )
-VAR Result =
+VAR _Result =
     CALCULATE(
         SUM(FactSales[Revenue]),
-        SelectedPeriod
+        _SelectedPeriod
     )
 RETURN
-    Result
+    _Result
 
 -- Bad: Dense one-liner
 Sales: Total Revenue = CALCULATE(SUM(FactSales[Revenue]), DATESBETWEEN(DimDate[Date], MIN(DimDate[Date]), MAX(DimDate[Date])))
@@ -61,20 +95,20 @@ Never nest `CALCULATE` inside another `CALCULATE`. Use `VAR` to break it apart.
 ```dax
 -- Good: Break into VARs, single CALCULATE
 Sales: Revenue YTD =
-VAR CurrentYear =
+VAR _CurrentYear =
     CALCULATE(
         [Sales: Total Revenue],
         DATESYTD(DimDate[Date])
     )
-VAR PreviousYear =
+VAR _PreviousYear =
     CALCULATE(
         [Sales: Total Revenue],
         SAMEPERIODLASTYEAR(DimDate[Date])
     )
-VAR Result =
-    CurrentYear - PreviousYear
+VAR _Result =
+    _CurrentYear - _PreviousYear
 RETURN
-    Result
+    _Result
 
 -- Bad: Nested CALCULATE
 Sales: Revenue YTD =
@@ -90,6 +124,14 @@ Sales: Revenue YTD =
 ## 4. Filter Columns, Not Tables
 
 Prefer filtering columns (not entire tables) in `CALCULATE`.
+
+> **Hybrid note (§28, §30):** a predicate passed as a `CALCULATE` filter argument
+> *replaces* the outer filter on that column: it is a filter-state override. Use this
+> form only when that override is the intent (§30). For routine local filtering that
+> should respect the existing filter context, use a table variable with an explicit
+> iterator instead (§28). When `CALCULATE` is justified, boolean column predicates
+> remain the endorsed filter-argument form; `FILTER(<table>, ...)` as a filter argument
+> stays banned.
 
 ```dax
 -- Good: Filter on column
@@ -238,6 +280,11 @@ After writing a measure, validate before committing:
 - [ ] No bidirectional relationships (use CROSSFILTER in measures)
 - [ ] Marked Date table for time intelligence
 - [ ] Context transition considered
+- [ ] Variables named with a leading underscore: `VAR _Name` (§27)
+- [ ] Routine local filters use table variables + explicit iterators (§28)
+- [ ] Every `CALCULATE` justified under §30; none gratuitous (§29)
+- [ ] No magic numbers or inline business literals (§31)
+- [ ] Context transitions intentional and commented (§32)
 - [ ] Comments on complex logic
 - [ ] **Validation completed** (base measure, slicers, edge cases, control totals)
 - [ ] **Direct Lake constraints verified** (no calculated columns, table names match exactly)
@@ -348,13 +395,13 @@ context level. Capture the outer row's value in a `VAR` before entering the inne
 ```dax
 -- Good: capture the outer row's value in a VAR
 RunningTotal =
-VAR CurrentDate = FactSales[OrderDate]
+VAR _CurrentDate = FactSales[OrderDate]
 RETURN
     CALCULATE(
         SUM(FactSales[Revenue]),
         FILTER(
             ALL(FactSales),
-            FactSales[OrderDate] <= CurrentDate
+            FactSales[OrderDate] <= _CurrentDate
         )
     )
 
@@ -420,6 +467,285 @@ TMDL a description is a `///` doc-comment directly above the declaration; in a `
 measure 'Sales: Total Revenue' = SUM(FactSales[Revenue])
 ```
 
+## 27. Variable Names: Leading Underscore (MUST)
+
+Every local variable MUST be named with a leading underscore (`_Name`). The prefix makes
+local variables instantly distinguishable from column references (`Table[Column]`) and
+measure references (`[Measure]`), and it keeps the step-by-step dependency chain obvious
+when reading a measure top to bottom.
+
+> Convention note: *DAX for Humans* writes these with a double underscore (`__Table`,
+> `__Result`). This standard adopts a single leading underscore; either prefix achieves
+> the same goal, and consistency within the model is what matters.
+
+**BEFORE (Non-Compliant)**
+
+```dax
+Sales: YoY Growth =
+VAR CurrentYearSales =
+    SUM(FactSales[Revenue])
+VAR PriorYearSales =
+    CALCULATE(
+        SUM(FactSales[Revenue]),
+        SAMEPERIODLASTYEAR(DimDate[Date])
+    )
+RETURN
+    CurrentYearSales - PriorYearSales
+```
+
+**AFTER (Compliant)**
+
+```dax
+Sales: YoY Growth =
+VAR _CurrentYearSales =
+    SUM(FactSales[Revenue])
+VAR _PriorYearSales =
+    CALCULATE(
+        SUM(FactSales[Revenue]),
+        SAMEPERIODLASTYEAR(DimDate[Date])
+    )
+RETURN
+    _CurrentYearSales - _PriorYearSales
+```
+
+## 28. Table Variables + Explicit Iterators for Routine Local Filters (PREFER)
+
+A *routine local filter* is a predicate over the data itself (a quantity threshold, a
+category membership, a row-level condition) that does not need to change the report's
+filter state. For these you MUST default to an isolated table variable aggregated by an
+explicit iterator, not `CALCULATE`.
+
+Why: `FILTER(...)` used as a table function iterates the **already-filtered** table, so
+the existing slicer/page context is respected. The same predicate passed as a
+`CALCULATE` filter argument would **replace** the outer filter on that column (§4).
+
+- PREFER `VAR _FilteredTable = FILTER(...)` + `SUMX` / `COUNTX` / `AVERAGEX` / `MINX` /
+  `MAXX` for routine local filters.
+- MUST NOT use `CALCULATE` for a routine local filter (§29, §30).
+- Keep the table variable as narrow as practical: filter early, iterate only what the
+  aggregation needs.
+
+**BEFORE (Non-Compliant)**
+
+```dax
+Sales: Large Order Revenue =
+CALCULATE(
+    SUM(FactSales[Revenue]),
+    FILTER(
+        FactSales,
+        FactSales[Quantity] > 10
+    )
+)
+-- Two problems: CALCULATE for a routine local filter, and FILTER(table) as a
+-- filter argument (§4). The predicate also silently replaces any outer
+-- filter on FactSales[Quantity].
+```
+
+**AFTER (Compliant)**
+
+```dax
+Sales: Large Order Revenue =
+VAR _LargeOrderQuantityThreshold = 10
+VAR _LargeOrders =
+    FILTER(
+        FactSales,
+        FactSales[Quantity] > _LargeOrderQuantityThreshold
+    )
+VAR _Result =
+    SUMX(_LargeOrders, FactSales[Revenue])
+RETURN
+    _Result
+```
+
+Multi-condition local filters stay in the same shape:
+
+```dax
+Sales: West Large Order Revenue =
+VAR _LargeOrderQuantityThreshold = 10
+VAR _WestRegion = "West"
+VAR _TargetOrders =
+    FILTER(
+        FactSales,
+        FactSales[Quantity] > _LargeOrderQuantityThreshold
+            && RELATED(DimRegion[RegionName]) = _WestRegion
+    )
+VAR _Result =
+    SUMX(_TargetOrders, FactSales[Revenue])
+RETURN
+    _Result
+```
+
+Debugging tip from *DAX for Humans*: to inspect a table variable, temporarily change the
+`RETURN` to `TOCSV(_TargetOrders)` and drop the measure in a Card visual. You see the
+exact rows the variable holds, which is what makes this pattern step-debuggable. Restore
+the real `RETURN` before committing.
+
+## 29. No Gratuitous CALCULATE (MUST NOT)
+
+MUST NOT wrap a basic scalar expression or straightforward aggregation in `CALCULATE`
+when no filter, relationship, or context-transition behavior is needed. A
+single-argument `CALCULATE` in a plain measure adds nothing the engine does not already
+do, and it signals to the reader that a filter manipulation exists when none does.
+
+**BEFORE (Non-Compliant)**
+
+```dax
+Sales: Total Revenue =
+CALCULATE(
+    SUM(FactSales[Revenue])
+)
+```
+
+**AFTER (Compliant)**
+
+```dax
+Sales: Total Revenue =
+SUM(FactSales[Revenue])
+```
+
+Note: a single-argument `CALCULATE` inside a **row context** is not gratuitous; it is
+context transition, governed by §30 (case 3) and §32, and must be intentional.
+
+## 30. Intentional CALCULATE: The Three Allowed Uses (ALLOW)
+
+`CALCULATE` is ALLOWED only when at least one of the following is true. If none apply,
+the measure belongs in the variable-first form (§28).
+
+1. **Global filter-state overrides.** Manipulating the active page/visual slicer context
+   with `REMOVEFILTERS()`, `ALL()`, `ALLEXCEPT()`, or `ALLSELECTED()`. This includes
+   replacing the Date filter context for time intelligence (`DATESYTD`,
+   `SAMEPERIODLASTYEAR`, `DATEADD`, `DATESBETWEEN`, …), which requires the marked Date
+   table of §8.
+2. **Relationship and security overrides.** Switching the active relationship with
+   `USERELATIONSHIP()` (§23) or altering filter propagation with `CROSSFILTER()` (§7).
+3. **Deliberate row-to-filter context transition.** In calculated columns or specialized
+   row-level iterations where table-variable filtering (§28) is impractical (§9, §32).
+
+Inside a justified `CALCULATE`, filter arguments follow §4 (boolean column predicates,
+never `FILTER(<table>, ...)` where a predicate suffices) and §5 (`KEEPFILTERS` when the
+outer filter shape must be preserved).
+
+**BEFORE (Non-Compliant)**
+
+```dax
+Sales: Online Revenue =
+CALCULATE(
+    SUM(FactSales[Revenue]),
+    FactSales[Channel] = "Online"
+)
+-- No slicer override intended, no relationship change, no context transition.
+-- This is a routine local filter: write it as a table variable (§28).
+```
+
+**AFTER (Compliant): case 1, filter-state override**
+
+```dax
+Sales: Revenue % of All Regions =
+VAR _RegionRevenue =
+    SUM(FactSales[Revenue])
+VAR _AllRegionRevenue =
+    CALCULATE(
+        SUM(FactSales[Revenue]),
+        REMOVEFILTERS(DimRegion)
+    )
+RETURN
+    DIVIDE(_RegionRevenue, _AllRegionRevenue)
+```
+
+**AFTER (Compliant): case 2, relationship override**
+
+```dax
+Sales: Revenue by Ship Date =
+CALCULATE(
+    [Sales: Total Revenue],
+    USERELATIONSHIP(FactSales[ShipDate], DimDate[Date])
+)
+```
+
+**AFTER (Compliant): case 3, deliberate context transition**
+
+```dax
+Sales: Average Revenue per Customer =
+AVERAGEX(
+    VALUES(DimCustomer[CustomerId]),
+    [Sales: Total Revenue]  -- intentional context transition: one revenue value per customer
+)
+```
+
+## 31. No Magic Numbers or Inline Business Literals (MUST NOT)
+
+Any numeric or string literal that carries business meaning (thresholds, channel or
+status codes, target values, scaling factors a reader could not guess) MUST be defined
+as a named variable at the top of the measure, not embedded inline. The name documents
+the business meaning and gives reviewers one place to change it.
+
+Exempt: `0`, `1`, `100` in pure arithmetic (percent scaling), `BLANK()`, `TRUE()`,
+`FALSE()`.
+
+**BEFORE (Non-Compliant)**
+
+```dax
+Sales: Large Online Order Count =
+VAR _LargeOrders =
+    FILTER(
+        FactSales,
+        FactSales[Quantity] > 10
+            && FactSales[Channel] = "Online"
+    )
+RETURN
+    COUNTX(_LargeOrders, FactSales[OrderId])
+```
+
+**AFTER (Compliant)**
+
+```dax
+Sales: Large Online Order Count =
+VAR _LargeOrderQuantityThreshold = 10
+VAR _OnlineChannel = "Online"
+VAR _LargeOrders =
+    FILTER(
+        FactSales,
+        FactSales[Quantity] > _LargeOrderQuantityThreshold
+            && FactSales[Channel] = _OnlineChannel
+    )
+RETURN
+    COUNTX(_LargeOrders, FactSales[OrderId])
+```
+
+## 32. No Implicit Context Transition in Basic Measures (MUST NOT)
+
+A measure reference (or a single-argument `CALCULATE`) inside an iterator wraps the
+expression in a hidden `CALCULATE` and triggers context transition for every iterated
+row (§9). MUST NOT rely on this accidentally:
+
+- In routine aggregations, iterate explicit row-level expressions over table variables
+  (§28) so no transition occurs at all.
+- When per-row transition is the point of the measure (the §30 case 3 pattern, such as
+  averaging a measure per customer), it is ALLOWED and MUST carry a comment stating the
+  transition is intentional.
+
+**BEFORE (Non-Compliant)**
+
+```dax
+Sales: Revenue Calc =
+SUMX(
+    FactSales,
+    FactSales[Quantity] * [Sales: Average Unit Price]
+    -- accidental transition: the measure reference re-evaluates per row
+)
+```
+
+**AFTER (Compliant)**
+
+```dax
+Sales: Revenue Calc =
+SUMX(
+    FactSales,
+    FactSales[Quantity] * RELATED(DimProduct[UnitPrice])
+    -- explicit row-level expression; no context transition needed
+)
+```
+
 ## 26. References
 
 - [Microsoft Fabric Skills for GitHub Copilot](https://github.com/microsoft/skills-for-fabric) — Official Microsoft-authored Fabric skills (MIT license)
@@ -427,5 +753,7 @@ measure 'Sales: Total Revenue' = SUM(FactSales[Revenue])
 - [Microsoft Fabric DAX Guidelines](https://github.com/microsoft/skills-for-fabric/tree/main/skills/semantic-model-authoring/references/dax-guidelines.md) — Authoritative DAX guidance
 - [Microsoft Fabric Direct Lake Guidelines](https://github.com/microsoft/skills-for-fabric/tree/main/skills/semantic-model-authoring/references/direct-lake-guidelines.md) — Direct Lake constraints
 - [Microsoft Fabric Community Blog](https://community.fabric.microsoft.com/t5/Fabric-Updates-Blog/Fabric-Skills-for-GitHub-Copilot-Claude-and-CLI-built-by/ba-p/5190188) — Announcement and overview
+- Greg Deckler, *DAX for Humans* (2025) — the variable-first, table-variable, explicit-iterator "No CALCULATE" methodology behind Tier 1 (§27–§29). Companion code: <https://github.com/gdeckler/DAX-For-Humans>
+- [SQLBI](https://www.sqlbi.com) — CALCULATE-centric guidance; this standard keeps its filter-argument discipline (§4, §5) and context-transition rigor (§9, §32) while defaulting to variable-first authoring (§28)
 
 > **Note:** Microsoft updates their skills repository regularly. This agent checks for updates weekly and patches new guidance into these standards as needed.
