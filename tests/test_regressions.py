@@ -34,14 +34,40 @@ def test_unreadable_tmdl_degrades_only_its_own_model(tmp_path):
     bad_dir.mkdir(parents=True)
     bad = bad_dir / "T.tmdl"
     bad.write_text("table T\n", encoding="utf-8")
-    os.chmod(bad, 0)
-    if os.access(bad, os.R_OK):  # running as root / permissive FS — can't simulate
-        pytest.skip("cannot make a file unreadable in this environment")
+    if os.name == "nt":
+        # chmod does not remove Windows read permission. Hold a real exclusive
+        # file handle so the parser must handle a native sharing violation.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateFileW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        kernel.CreateFileW.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.CreateFileW(str(bad), 0x80000000, 0, None, 3, 0x80, None)
+        assert handle != ctypes.c_void_p(-1).value, ctypes.get_last_error()
+    else:
+        os.chmod(bad, 0)
+        if os.access(bad, os.R_OK):  # running as root / permissive FS
+            os.chmod(bad, stat.S_IRUSR | stat.S_IWUSR)
+            pytest.skip("cannot make a file unreadable in this environment")
     try:
         tmdl, bim, _pbit, _pbix = discover_inputs((str(tmp_path),))
         catalogs = build_catalogs(tmdl, bim)
     finally:
-        os.chmod(bad, stat.S_IRUSR | stat.S_IWUSR)
+        if os.name == "nt":
+            assert kernel.CloseHandle(handle)
+        else:
+            os.chmod(bad, stat.S_IRUSR | stat.S_IWUSR)
     names = {c.name for c in catalogs}
     assert "Good" in names  # readable model still analyzed
     # the unreadable file is reported as a diagnostic on its real path, not "(tmdl)"
