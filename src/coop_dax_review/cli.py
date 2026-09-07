@@ -192,10 +192,10 @@ def build_catalogs(
         else:
             catalogs.append(_unreadable_model(disp, exc))
     for key in sorted(groups):
-        _root, model_name = key
+        root, model_name = key
         files = groups[key]
         try:
-            catalogs.append(parse_tmdl_model(model_name, files))
+            catalogs.append(parse_tmdl_model(model_name, files, source_root=root))
         except Exception as exc:  # malformed TMDL / unexpected shape — degrade, never crash  # noqa: BLE001
             disp = next(iter(files), model_name)
             cat = ModelCatalog(name=model_name, file=disp)
@@ -287,6 +287,35 @@ def build_catalogs(
             on_file(disp)
 
     return catalogs
+
+
+def apply_pbir_report_awareness(catalogs: list[ModelCatalog]) -> None:
+    """Attach the exact sibling PBIR report to each standard PBIP model.
+
+    ``source_root`` is the resolved root produced by ``model_root`` during TMDL
+    grouping. Loose TMDL, .bim, and .pbit inputs intentionally leave it empty,
+    preventing a same-named but unrelated report directory from being guessed.
+    """
+    semantic_suffix = ".SemanticModel"
+    for catalog in catalogs:
+        if not catalog.source_root:
+            continue
+        model_dir = Path(catalog.source_root)
+        if not model_dir.name.lower().endswith(semantic_suffix.lower()):
+            continue
+
+        basename = model_dir.name[: -len(semantic_suffix)]
+        exact_report = model_dir.parent / f"{basename}.Report"
+        if not exact_report.is_dir():
+            continue
+
+        scan = parse_report_references(exact_report)
+        catalog.report_refs.extend(scan.references)
+        catalog.reports_scanned += 1
+        catalog.report_files_attempted += scan.files_attempted
+        catalog.report_files_parsed += scan.files_parsed
+        catalog.report_scan_status = scan.status
+        catalog.diagnostics.extend(scan.diagnostics)
 
 
 def _unreadable_model(disp: str, exc: Exception) -> ModelCatalog:
@@ -771,20 +800,12 @@ def check(
         progress.line(f"Loading VPAX stats from {resolved_vpax.name}...")
         apply_vpax_stats(catalogs, resolved_vpax)
 
-    # Apply PBIR report awareness (issue #33)
+    # Apply PBIR report awareness using the authoritative model root carried by
+    # group_tmdl_files. catalog.file is only a display/source file and may be
+    # .../definition/model.tmdl, so deriving from its parent misses normal PBIP.
     if catalogs:
         progress.line("Scanning for PBIR report references...")
-        for catalog in catalogs:
-            model_dir = Path(catalog.file).parent
-            if model_dir.name.endswith(".SemanticModel"):
-                parent_dir = model_dir.parent
-                basename = model_dir.name[: -len(".SemanticModel")]
-
-                exact_report = parent_dir / f"{basename}.Report"
-                if exact_report.is_dir():
-                    refs = parse_report_references(exact_report)
-                    catalog.report_refs.extend(refs)
-                    catalog.reports_scanned += 1
+        apply_pbir_report_awareness(catalogs)
 
     result = run_rules(catalogs, rules)
     for pbix in pbix_files:

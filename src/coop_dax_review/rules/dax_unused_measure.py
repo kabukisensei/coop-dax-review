@@ -16,7 +16,9 @@ from coop_dax_review.rules.base import Rule, RuleContext
 
 
 def detect(ctx: RuleContext) -> list[AgentReviewItem]:
-    if ctx.catalog.reports_scanned == 0:
+    # Missing report evidence is not evidence of non-use. Only a completely
+    # parsed local PBIR report can support this cleanup suggestion.
+    if ctx.catalog.report_scan_status != "complete":
         return []
 
     items: list[AgentReviewItem] = []

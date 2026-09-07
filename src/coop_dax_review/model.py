@@ -131,6 +131,10 @@ class ModelCatalog:
 
     name: str  # display name of the semantic model
     file: str = ""  # primary file (model.tmdl / model.bim) for model-level findings
+    # Resolved *.SemanticModel root when this catalog came from a standard PBIP
+    # TMDL layout. Loose TMDL/.bim inputs leave it empty, so report discovery
+    # never guesses a sibling from a display filename.
+    source_root: str = ""
     tables: list[Table] = field(default_factory=list)
     measures: list[Measure] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
@@ -140,6 +144,9 @@ class ModelCatalog:
     diagnostics: list[Diagnostic] = field(default_factory=list)
     report_refs: list[ReportReference] = field(default_factory=list)
     reports_scanned: int = 0
+    report_files_attempted: int = 0
+    report_files_parsed: int = 0
+    report_scan_status: str = "not-applicable"
 
     # -- lookup indexes (normalized keys) ----------------------------------
 

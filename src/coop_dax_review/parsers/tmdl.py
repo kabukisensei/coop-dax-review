@@ -167,11 +167,12 @@ def model_root(path: str) -> tuple[str, str]:
     parts = PurePosixPath(path).parts
     for index, part in enumerate(parts):
         if part.lower().endswith(".semanticmodel"):
-            return "/".join(parts[: index + 1]), part[: -len(".SemanticModel")]
+            root = PurePosixPath(*parts[: index + 1]).as_posix()
+            return root, part[: -len(".SemanticModel")]
     if "definition" in parts:
         index = parts.index("definition")
         if index > 0:
-            return "/".join(parts[:index]), parts[index - 1]
+            return PurePosixPath(*parts[:index]).as_posix(), parts[index - 1]
     parent = PurePosixPath(path).parent
     if parent.name:
         return parent.as_posix(), parent.name
@@ -798,14 +799,14 @@ def _parse_calculation_items(
     return out
 
 
-def parse_tmdl_model(name: str, files: dict[str, str]) -> ModelCatalog:
+def parse_tmdl_model(name: str, files: dict[str, str], *, source_root: str = "") -> ModelCatalog:
     """Build a catalog from one model's ``{relative_path: text}`` TMDL files.
 
     ``model.tmdl`` / ``relationships.tmdl`` contribute relationships; every
     file is scanned for ``table`` and ``measure`` blocks (a measure can live
     in its table's file).
     """
-    catalog = ModelCatalog(name=name)
+    catalog = ModelCatalog(name=name, source_root=source_root)
     for path in sorted(files):
         text = files[path].replace("\r\n", "\n").replace("\r", "\n")
         lines = text.split("\n")

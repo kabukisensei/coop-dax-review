@@ -25,3 +25,8 @@ from coop_review_core.diagnostics import (  # noqa: F401
 # (unbalanced parens/brackets, an unterminated string/block comment, an empty
 # body) — "error" by default, tunable via the rules.yml `syntax_errors` knob and
 # an inline `coop-dax-review:ignore syntax` directive.
+
+# A PBIR JSON file could not be read, decoded, or parsed. This is tool-specific:
+# losing report evidence can hide actual field usage, so it is error severity
+# and prevents DAX-UNUSED-MEASURE from reasoning over an incomplete scan.
+PBIR_PARSE_FAILED = "pbir_parse_failed"

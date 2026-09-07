@@ -25,6 +25,10 @@ class Result:
     agent_review: list[AgentReviewItem] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
     models_checked: int = 0
+    reports_scanned: int = 0
+    report_files_attempted: int = 0
+    report_files_parsed: int = 0
+    report_scan_status: str = "not-applicable"
 
     def summary(self) -> dict[str, int]:
         """Counts per severity across all findings."""
@@ -54,12 +58,29 @@ class Result:
             agent_review=list(self.agent_review),
             diagnostics=list(self.diagnostics),
             models_checked=self.models_checked,
+            reports_scanned=self.reports_scanned,
+            report_files_attempted=self.report_files_attempted,
+            report_files_parsed=self.report_files_parsed,
+            report_scan_status=self.report_scan_status,
         )
 
 
 def run_rules(catalogs: list[ModelCatalog], rules: list[Rule]) -> Result:
     """Evaluate every rule against every parsed model."""
     result = Result(models_checked=len(catalogs))
+    result.reports_scanned = sum(catalog.reports_scanned for catalog in catalogs)
+    result.report_files_attempted = sum(catalog.report_files_attempted for catalog in catalogs)
+    result.report_files_parsed = sum(catalog.report_files_parsed for catalog in catalogs)
+    scan_states = [
+        catalog.report_scan_status for catalog in catalogs if catalog.report_scan_status != "not-applicable"
+    ]
+    if scan_states:
+        if all(state == "complete" for state in scan_states):
+            result.report_scan_status = "complete"
+        elif all(state == "failed" for state in scan_states):
+            result.report_scan_status = "failed"
+        else:
+            result.report_scan_status = "partial"
     for catalog in catalogs:
         result.diagnostics.extend(catalog.diagnostics)  # parse failures / degradations
         for rule in rules:

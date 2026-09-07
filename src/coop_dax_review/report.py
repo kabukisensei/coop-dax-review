@@ -108,7 +108,7 @@ def _agent_review_json(a) -> dict:
 
 def to_json(result: Result, *, version: str, standards: dict[str, str]) -> dict:
     """The agent contract: stable keys, sorted, deterministic."""
-    return build_envelope(
+    envelope = build_envelope(
         tool=TOOL,
         schema_version=SCHEMA_VERSION,
         version=version,
@@ -125,6 +125,15 @@ def to_json(result: Result, *, version: str, standards: dict[str, str]) -> dict:
         agent_review=[_agent_review_json(a) for a in result.agent_review],
         diagnostics=[diagnostic_json(d) for d in result.diagnostics],
     )
+    envelope["coverage"] = {
+        "pbir": {
+            "status": result.report_scan_status,
+            "reports_scanned": result.reports_scanned,
+            "files_attempted": result.report_files_attempted,
+            "files_parsed": result.report_files_parsed,
+        }
+    }
+    return envelope
 
 
 def json_text(result: Result, *, version: str, standards: dict[str, str]) -> str:
